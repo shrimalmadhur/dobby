@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SERVICE_NAME="jarvis"
+
+red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+
+# --- Pull latest code ---
+echo "Pulling latest code..."
+cd "$REPO_DIR"
+git pull
+
+# --- Install dependencies ---
+echo ""
+echo "Installing dependencies..."
+pnpm install --frozen-lockfile
+
+# --- Build ---
+echo ""
+echo "Building for production..."
+pnpm build
+
+# --- Copy static assets into standalone dir ---
+echo ""
+echo "Copying static assets..."
+STANDALONE_DIR="$REPO_DIR/.next/standalone"
+
+if [ ! -f "$STANDALONE_DIR/server.js" ]; then
+    red "Error: Standalone build not found at $STANDALONE_DIR/server.js"
+    exit 1
+fi
+
+if [ -d "$REPO_DIR/public" ]; then
+    cp -r "$REPO_DIR/public" "$STANDALONE_DIR/public"
+fi
+
+mkdir -p "$STANDALONE_DIR/.next"
+cp -r "$REPO_DIR/.next/static" "$STANDALONE_DIR/.next/static"
+
+# --- Restart service ---
+echo ""
+echo "Restarting $SERVICE_NAME..."
+sudo systemctl restart "$SERVICE_NAME"
+
+sleep 2
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    COMMIT=$(git rev-parse --short HEAD)
+    green ""
+    green "Jarvis upgraded to $COMMIT and running"
+    green "  Status: $(systemctl is-active $SERVICE_NAME)"
+else
+    red "Service failed to start after upgrade. Check logs:"
+    red "  sudo journalctl -u jarvis -n 50"
+    exit 1
+fi
