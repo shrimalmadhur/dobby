@@ -6,6 +6,12 @@ SERVICE_NAME="jarvis"
 ENV_DIR="/etc/jarvis"
 ENV_FILE="${ENV_DIR}/env"
 PORT=7749
+OS="$(uname -s)"
+
+# macOS launchd identifiers
+PLIST_LABEL="com.jarvis.agent"
+PLIST_PATH="/Library/LaunchDaemons/${PLIST_LABEL}.plist"
+LOG_DIR="/var/log/jarvis"
 
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
@@ -19,6 +25,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 ACTUAL_USER="${SUDO_USER:-$(whoami)}"
+ACTUAL_GROUP="$(id -gn "$ACTUAL_USER")"
 
 # --- Check prerequisites ---
 echo "Checking prerequisites..."
@@ -40,6 +47,7 @@ if ! command -v pnpm &>/dev/null; then
     exit 1
 fi
 green "  pnpm $(pnpm -v)"
+green "  OS: $OS"
 
 # --- Install dependencies and build ---
 echo ""
@@ -78,7 +86,7 @@ if [ ! -f "$ENV_FILE" ]; then
     mkdir -p "$ENV_DIR"
     cat > "$ENV_FILE" << 'ENVEOF'
 # Jarvis Environment Configuration
-# Edit this file and restart the service: sudo systemctl restart jarvis
+# Edit this file and restart the service (see install output for commands)
 
 # Required
 DATABASE_URL=
@@ -88,46 +96,85 @@ GEMINI_API_KEY=
 # OPENAI_API_KEY=
 # ANTHROPIC_API_KEY=
 ENVEOF
-    chown "$ACTUAL_USER:$ACTUAL_USER" "$ENV_FILE"
+    chown "$ACTUAL_USER:$ACTUAL_GROUP" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
     yellow "  Created $ENV_FILE — you must fill in DATABASE_URL and GEMINI_API_KEY"
 else
     green "  $ENV_FILE already exists, keeping existing configuration"
 fi
 
-# --- Install systemd service ---
+# --- Install service (OS-specific) ---
 echo ""
-echo "Installing systemd service..."
 
-# Generate service file with actual paths and user
-sed -e "s|__USER__|$ACTUAL_USER|g" \
-    -e "s|__REPO_DIR__|$REPO_DIR|g" \
-    "$REPO_DIR/jarvis.service" > "/etc/systemd/system/${SERVICE_NAME}.service"
+if [ "$OS" = "Darwin" ]; then
+    # --- macOS: launchd ---
+    echo "Installing launchd service..."
 
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+    # Create log directory
+    mkdir -p "$LOG_DIR"
+    chown "$ACTUAL_USER:$ACTUAL_GROUP" "$LOG_DIR"
 
-# --- Start service ---
-echo ""
-echo "Starting $SERVICE_NAME..."
-systemctl start "$SERVICE_NAME"
+    # Generate plist with actual paths and user
+    sed -e "s|__USER__|$ACTUAL_USER|g" \
+        -e "s|__REPO_DIR__|$REPO_DIR|g" \
+        "$REPO_DIR/jarvis.plist" > "$PLIST_PATH"
 
-sleep 2
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-    green ""
-    green "Jarvis is installed and running on port $PORT"
-    green ""
-    echo "Useful commands:"
-    echo "  sudo systemctl status jarvis    # Check status"
-    echo "  sudo systemctl restart jarvis   # Restart"
-    echo "  sudo systemctl stop jarvis      # Stop"
-    echo "  sudo journalctl -u jarvis -f    # Follow logs"
-    echo ""
-    if grep -q '^DATABASE_URL=$' "$ENV_FILE" 2>/dev/null; then
-        yellow "Next step: Edit $ENV_FILE with your API keys, then restart:"
-        yellow "  sudo systemctl restart jarvis"
+    # Unload if already loaded, then load
+    launchctl bootout system/"$PLIST_LABEL" 2>/dev/null || true
+    launchctl bootstrap system "$PLIST_PATH"
+
+    sleep 2
+    if launchctl print system/"$PLIST_LABEL" 2>/dev/null | grep -q "state = running"; then
+        green ""
+        green "Jarvis is installed and running on port $PORT"
+        green ""
+        echo "Useful commands:"
+        echo "  sudo launchctl print system/$PLIST_LABEL   # Check status"
+        echo "  sudo launchctl kickstart -k system/$PLIST_LABEL  # Restart"
+        echo "  sudo launchctl kill SIGTERM system/$PLIST_LABEL  # Stop"
+        echo "  tail -f $LOG_DIR/jarvis.log                # Follow logs"
+        echo ""
+        if grep -q '^DATABASE_URL=$' "$ENV_FILE" 2>/dev/null; then
+            yellow "Next step: Edit $ENV_FILE with your API keys, then restart:"
+            yellow "  sudo launchctl kickstart -k system/$PLIST_LABEL"
+        fi
+    else
+        red "Service failed to start. Check logs:"
+        red "  cat $LOG_DIR/jarvis.error.log"
     fi
 else
-    red "Service failed to start. Check logs:"
-    red "  sudo journalctl -u jarvis -n 50"
+    # --- Linux: systemd ---
+    echo "Installing systemd service..."
+
+    # Generate service file with actual paths and user
+    sed -e "s|__USER__|$ACTUAL_USER|g" \
+        -e "s|__REPO_DIR__|$REPO_DIR|g" \
+        "$REPO_DIR/jarvis.service" > "/etc/systemd/system/${SERVICE_NAME}.service"
+
+    systemctl daemon-reload
+    systemctl enable "$SERVICE_NAME"
+
+    echo ""
+    echo "Starting $SERVICE_NAME..."
+    systemctl start "$SERVICE_NAME"
+
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        green ""
+        green "Jarvis is installed and running on port $PORT"
+        green ""
+        echo "Useful commands:"
+        echo "  sudo systemctl status jarvis    # Check status"
+        echo "  sudo systemctl restart jarvis   # Restart"
+        echo "  sudo systemctl stop jarvis      # Stop"
+        echo "  sudo journalctl -u jarvis -f    # Follow logs"
+        echo ""
+        if grep -q '^DATABASE_URL=$' "$ENV_FILE" 2>/dev/null; then
+            yellow "Next step: Edit $ENV_FILE with your API keys, then restart:"
+            yellow "  sudo systemctl restart jarvis"
+        fi
+    else
+        red "Service failed to start. Check logs:"
+        red "  sudo journalctl -u jarvis -n 50"
+    fi
 fi

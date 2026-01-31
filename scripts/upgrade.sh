@@ -3,6 +3,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_NAME="jarvis"
+OS="$(uname -s)"
+
+# macOS launchd identifiers
+PLIST_LABEL="com.jarvis.agent"
+LOG_DIR="/var/log/jarvis"
 
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
@@ -39,19 +44,35 @@ fi
 mkdir -p "$STANDALONE_DIR/.next"
 cp -r "$REPO_DIR/.next/static" "$STANDALONE_DIR/.next/static"
 
-# --- Restart service ---
+# --- Restart service (OS-specific) ---
 echo ""
 echo "Restarting $SERVICE_NAME..."
-sudo systemctl restart "$SERVICE_NAME"
 
-sleep 2
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-    COMMIT=$(git rev-parse --short HEAD)
-    green ""
-    green "Jarvis upgraded to $COMMIT and running"
-    green "  Status: $(systemctl is-active $SERVICE_NAME)"
+if [ "$OS" = "Darwin" ]; then
+    sudo launchctl kickstart -k system/"$PLIST_LABEL"
+
+    sleep 2
+    if launchctl print system/"$PLIST_LABEL" 2>/dev/null | grep -q "state = running"; then
+        COMMIT=$(git rev-parse --short HEAD)
+        green ""
+        green "Jarvis upgraded to $COMMIT and running"
+    else
+        red "Service failed to start after upgrade. Check logs:"
+        red "  cat $LOG_DIR/jarvis.error.log"
+        exit 1
+    fi
 else
-    red "Service failed to start after upgrade. Check logs:"
-    red "  sudo journalctl -u jarvis -n 50"
-    exit 1
+    sudo systemctl restart "$SERVICE_NAME"
+
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        COMMIT=$(git rev-parse --short HEAD)
+        green ""
+        green "Jarvis upgraded to $COMMIT and running"
+        green "  Status: $(systemctl is-active $SERVICE_NAME)"
+    else
+        red "Service failed to start after upgrade. Check logs:"
+        red "  sudo journalctl -u jarvis -n 50"
+        exit 1
+    fi
 fi
