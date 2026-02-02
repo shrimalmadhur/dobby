@@ -84,3 +84,14 @@ export const llmConfigs = pgTable("llm_configs", {
   temperature: real("temperature").default(0.7),
   isDefault: boolean("is_default").default(false).notNull(),
 });
+
+// ── Notification Configs ──────────────────────────────────────
+
+export const notificationConfigs = pgTable("notification_configs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channel: text("channel").notNull(), // 'telegram', etc.
+  enabled: boolean("enabled").default(true).notNull(),
+  config: jsonb("config").$type<Record<string, string>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
