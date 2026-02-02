@@ -53,7 +53,7 @@ async function getTelegramConfig(): Promise<TelegramConfig | null> {
 }
 
 /**
- * Send a Telegram message via the Bot API.
+ * Send a Telegram message via the Bot API using HTML parse mode.
  */
 async function sendTelegramMessage(
   config: TelegramConfig,
@@ -67,7 +67,7 @@ async function sendTelegramMessage(
     body: JSON.stringify({
       chat_id: config.chatId,
       text,
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     }),
     agent: ipv4Agent,
   } as never);
@@ -79,10 +79,72 @@ async function sendTelegramMessage(
 }
 
 /**
- * Escape Markdown v1 special characters for Telegram.
+ * Escape HTML special characters for Telegram.
  */
-function escapeMarkdown(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Convert markdown to Telegram-compatible HTML.
+ * Telegram supports: <b>, <i>, <code>, <pre>, <a>, <s>, <u>, <blockquote>
+ *
+ * Strategy: extract code blocks/inline first (with placeholders),
+ * HTML-escape everything, then apply markdown→HTML conversions,
+ * then restore code blocks.
+ */
+function markdownToTelegramHtml(text: string): string {
+  // 1. Extract code blocks and inline code into placeholders
+  const codeSlots: string[] = [];
+  let html = text;
+
+  // Fenced code blocks → placeholder
+  html = html.replace(/```(?:\w*)\n?([\s\S]*?)```/g, (_m, code: string) => {
+    const i = codeSlots.length;
+    codeSlots.push(`<pre>${escapeHtml(code.trim())}</pre>`);
+    return `\x00CODE${i}\x00`;
+  });
+
+  // Inline code → placeholder
+  html = html.replace(/`(.+?)`/g, (_m, code: string) => {
+    const i = codeSlots.length;
+    codeSlots.push(`<code>${escapeHtml(code)}</code>`);
+    return `\x00CODE${i}\x00`;
+  });
+
+  // 2. HTML-escape the rest (safe because code is already extracted)
+  html = escapeHtml(html);
+
+  // 3. Convert markdown to HTML tags
+  // Headings → bold
+  html = html.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
+
+  // Bold **text** or __text__
+  html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  html = html.replace(/__(.+?)__/g, "<b>$1</b>");
+
+  // Italic *text* or _text_
+  html = html.replace(/\*(.+?)\*/g, "<i>$1</i>");
+
+  // Strikethrough ~~text~~
+  html = html.replace(/~~(.+?)~~/g, "<s>$1</s>");
+
+  // Links [text](url)
+  html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+
+  // Bullet lists: - or * at line start → bullet character
+  html = html.replace(/^\s*[-*]\s+/gm, "\u2022 ");
+
+  // Collapse 3+ newlines
+  html = html.replace(/\n{3,}/g, "\n\n");
+
+  // 4. Restore code blocks
+  html = html.replace(/\x00CODE(\d+)\x00/g, (_m, i: string) => codeSlots[+i]);
+
+  return html.trim();
 }
 
 /**
@@ -102,21 +164,24 @@ export function notifyConversationComplete(
       const config = await getTelegramConfig();
       if (!config) return;
 
-      // Telegram limit is 4096 chars; reserve space for header + changes
-      const changesBlock = changes ? `\n\n\`\`\`\n${changes}\n\`\`\`` : "";
-      const overhead = 200 + changesBlock.length;
-      const maxLen = Math.max(500, 3800 - overhead);
-      const truncated =
+      const changesBlock = changes
+        ? `\n\n<pre>${escapeHtml(changes)}</pre>`
+        : "";
+      const overhead = 150 + changesBlock.length;
+      const maxLen = Math.max(300, 3900 - overhead);
+
+      // Truncate raw text first, then convert to HTML
+      const trimmed =
         assistantMessage.length > maxLen
           ? assistantMessage.substring(0, maxLen) + "..."
           : assistantMessage;
 
+      const messageHtml = markdownToTelegramHtml(trimmed);
+
       const parts = [
-        `*Jarvis* \u2014 conversation complete`,
+        `\u{1f916} <b>${escapeHtml(title)}</b>`,
         ``,
-        `*${escapeMarkdown(title)}*`,
-        ``,
-        escapeMarkdown(truncated),
+        messageHtml,
       ];
 
       if (changesBlock) {
