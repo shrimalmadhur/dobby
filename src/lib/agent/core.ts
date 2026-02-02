@@ -11,6 +11,7 @@ import {
 } from "./conversation-store";
 import { BUILTIN_TOOLS, BUILTIN_TOOL_NAMES, executeBuiltinTool } from "./builtin-tools";
 import type { AgentRequest, AgentResponse } from "./types";
+import { notifyConversationComplete } from "@/lib/notifications/telegram";
 
 const MAX_TOOL_ITERATIONS = 10;
 
@@ -155,13 +156,20 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
     await addMessage(conversationId, response.message, response.model);
 
     // Auto-title the conversation if it's new (first user message)
+    let conversationTitle: string;
     if (conversationMessages.length === 0) {
-      const title =
+      conversationTitle =
         request.message.length > 60
           ? request.message.substring(0, 57) + "..."
           : request.message;
-      await updateConversationTitle(conversationId, title);
+      await updateConversationTitle(conversationId, conversationTitle);
+    } else {
+      const conv = await getConversation(conversationId);
+      conversationTitle = conv?.title || "Untitled";
     }
+
+    // Fire-and-forget Telegram notification
+    notifyConversationComplete(conversationTitle, assistantContent, conversationId);
 
     return {
       conversationId,
@@ -174,6 +182,10 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   const fallback =
     "I've reached the maximum number of tool calls for this request. Here's what I was working on - could you try rephrasing your request?";
   await addMessage(conversationId, { role: "assistant", content: fallback });
+
+  // Notify on max-iteration fallback too
+  const conv = await getConversation(conversationId);
+  notifyConversationComplete(conv?.title || "Untitled", fallback, conversationId);
 
   return {
     conversationId,

@@ -21,6 +21,8 @@ import {
   ChevronUp,
   X,
   Check,
+  Send,
+  Bell,
 } from "lucide-react";
 
 // --- Preset MCP Servers ---
@@ -173,8 +175,24 @@ export default function SettingsPage() {
     env: "",
   });
 
+  // Telegram notification state
+  const [telegramConfig, setTelegramConfig] = useState({
+    botToken: "",
+    chatId: "",
+    enabled: false,
+    configured: false,
+    source: "none" as "none" | "env" | "db",
+  });
+  const [telegramSaving, setTelegramSaving] = useState(false);
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchServers();
+    fetchTelegramConfig();
   }, []);
 
   const fetchServers = async () => {
@@ -185,6 +203,81 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error("Error fetching servers:", error);
+    }
+  };
+
+  const fetchTelegramConfig = async () => {
+    try {
+      const res = await fetch("/api/notifications/telegram");
+      if (res.ok) {
+        const data = await res.json();
+        setTelegramConfig({
+          botToken: data.botToken || "",
+          chatId: data.chatId || "",
+          enabled: data.enabled,
+          configured: data.configured,
+          source: data.source,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching Telegram config:", error);
+    }
+  };
+
+  const saveTelegramConfig = async () => {
+    setTelegramSaving(true);
+    try {
+      const res = await fetch("/api/notifications/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botToken: telegramConfig.botToken,
+          chatId: telegramConfig.chatId,
+          enabled: true,
+        }),
+      });
+      if (res.ok) {
+        fetchTelegramConfig();
+      }
+    } catch (error) {
+      console.error("Error saving Telegram config:", error);
+    }
+    setTelegramSaving(false);
+  };
+
+  const testTelegram = async () => {
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch("/api/notifications/telegram/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botToken: telegramConfig.botToken,
+          chatId: telegramConfig.chatId,
+        }),
+      });
+      const result = await res.json();
+      setTelegramTestResult(result);
+    } catch {
+      setTelegramTestResult({ success: false, error: "Network error" });
+    }
+    setTelegramTesting(false);
+  };
+
+  const removeTelegramConfig = async () => {
+    try {
+      await fetch("/api/notifications/telegram", { method: "DELETE" });
+      setTelegramConfig({
+        botToken: "",
+        chatId: "",
+        enabled: false,
+        configured: false,
+        source: process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN ? "env" : "none",
+      });
+      setTelegramTestResult(null);
+    } catch (error) {
+      console.error("Error removing Telegram config:", error);
     }
   };
 
@@ -511,6 +604,102 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Telegram Notifications */}
+        <Card className="animate-fade-in">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              Notifications
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Send className="h-4.5 w-4.5 text-muted-foreground" />
+              <div>
+                <span className="text-sm font-medium text-foreground">Telegram</span>
+                <p className="text-[11px] text-muted">
+                  Send a summary when conversations complete
+                </p>
+              </div>
+            </div>
+
+            {telegramConfig.source === "env" && !telegramConfig.configured && (
+              <div className="rounded-lg bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
+                Using environment variables. Add config below to override.
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Bot Token
+                </label>
+                <input
+                  type="password"
+                  placeholder="123456:ABC-DEF..."
+                  value={telegramConfig.botToken}
+                  onChange={(e) =>
+                    setTelegramConfig({ ...telegramConfig, botToken: e.target.value })
+                  }
+                  className={inputClasses}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Chat ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="-1001234567890"
+                  value={telegramConfig.chatId}
+                  onChange={(e) =>
+                    setTelegramConfig({ ...telegramConfig, chatId: e.target.value })
+                  }
+                  className={inputClasses}
+                />
+              </div>
+
+              {telegramTestResult && (
+                <div
+                  className={`rounded-lg px-3 py-2 text-xs ${
+                    telegramTestResult.success
+                      ? "bg-green/10 text-green"
+                      : "bg-red/10 text-red"
+                  }`}
+                >
+                  {telegramTestResult.success
+                    ? "Test message sent successfully"
+                    : `Error: ${telegramTestResult.error}`}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="accent"
+                  onClick={saveTelegramConfig}
+                  disabled={!telegramConfig.botToken || !telegramConfig.chatId || telegramSaving}
+                >
+                  {telegramSaving ? "Saving..." : "Save"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={testTelegram}
+                  disabled={!telegramConfig.botToken || !telegramConfig.chatId || telegramTesting}
+                >
+                  {telegramTesting ? "Testing..." : "Test"}
+                </Button>
+                {telegramConfig.configured && (
+                  <Button size="sm" variant="ghost" onClick={removeTelegramConfig}>
+                    Remove
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
