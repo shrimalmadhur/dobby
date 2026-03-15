@@ -754,7 +754,7 @@ export default function AgentDetailPage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8 space-y-6">
+      <div className="px-8 lg:px-12 py-8 space-y-6">
         {/* Back + Header */}
         <div className="animate-fade-in space-y-4">
           <Link
