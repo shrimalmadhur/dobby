@@ -29,6 +29,17 @@ echo ""
 echo "Installing dependencies..."
 bun install --frozen-lockfile
 
+# Rebuild better-sqlite3 for the system Node.js version
+# (bun install compiles it for Bun's internal Node, but Next.js build workers use system Node)
+echo ""
+echo "Rebuilding native modules for Node $(node --version)..."
+npm rebuild better-sqlite3 2>/dev/null || true
+
+# --- Apply DB schema changes ---
+echo ""
+echo "Applying database schema..."
+bun run drizzle-kit push 2>/dev/null || true
+
 # --- Build ---
 echo ""
 echo "Building for production..."
