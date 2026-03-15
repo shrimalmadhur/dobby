@@ -66,7 +66,7 @@ function StatCard({
     >
       <div className="flex items-center gap-2">
         {icon}
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
       </div>
@@ -111,18 +111,18 @@ function SessionCard({ session, index }: { session: AgentSession; index: number 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2.5">
                 <StatusIndicator status={session.status} />
-                <span className="text-[13px] font-semibold text-foreground truncate">
+                <span className="text-sm font-semibold text-foreground truncate">
                   {session.projectName}
                 </span>
               </div>
               {session.slug && (
-                <p className="mt-1 pl-[18px] font-mono text-[10px] text-muted leading-relaxed truncate">
+                <p className="mt-1 pl-[18px] font-mono text-xs text-muted-foreground leading-relaxed truncate">
                   {session.slug}
                 </p>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted">
-              <Clock className="h-3 w-3" />
+            <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
               {timeAgo}
             </div>
           </div>
@@ -136,7 +136,7 @@ function SessionCard({ session, index }: { session: AgentSession; index: number 
                 ) : (
                   <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 )}
-                <p className="font-mono text-[11px] leading-relaxed text-muted-foreground break-all line-clamp-2">
+                <p className="font-mono text-xs leading-relaxed text-muted-foreground break-all line-clamp-2">
                   {session.lastAction}
                 </p>
               </div>
@@ -145,29 +145,29 @@ function SessionCard({ session, index }: { session: AgentSession; index: number 
 
           {/* Meta row */}
           <div className="flex items-center justify-between pt-0.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               {session.model && (
-                <span className="flex items-center gap-1">
-                  <Cpu className="h-3 w-3" />
+                <span className="flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5" />
                   {session.model}
                 </span>
               )}
               {session.gitBranch && (
-                <span className="flex items-center gap-1 truncate max-w-[130px]">
-                  <GitBranch className="h-3 w-3 shrink-0" />
+                <span className="flex items-center gap-1.5 truncate max-w-[160px]">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-mono">{session.gitBranch}</span>
                 </span>
               )}
-              <span className="flex items-center gap-1 font-mono">
-                <Zap className="h-3 w-3" />
+              <span className="flex items-center gap-1.5 font-mono">
+                <Zap className="h-3.5 w-3.5" />
                 {formatTokens(tokens)}
               </span>
-              <span className="flex items-center gap-1 font-mono">
-                <MessageSquare className="h-3 w-3" />
+              <span className="flex items-center gap-1.5 font-mono">
+                <MessageSquare className="h-3.5 w-3.5" />
                 {session.messageCount}
               </span>
             </div>
-            <ChevronRight className="h-3.5 w-3.5 text-muted opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
           </div>
         </div>
       </div>
@@ -178,10 +178,10 @@ function SessionCard({ session, index }: { session: AgentSession; index: number 
 function SectionHeader({ title, count }: { title: string; count: number }) {
   return (
     <div className="flex items-center gap-3">
-      <h2 className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+      <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
         {title}
       </h2>
-      <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-[10px] text-muted">
+      <span className="rounded-full bg-surface-raised px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
         {count}
       </span>
       <div className="flex-1 border-t border-border/40" />
@@ -234,7 +234,7 @@ export default function SessionsPage() {
                 <h1 className="text-lg font-bold tracking-tight text-foreground">
                   Sessions
                 </h1>
-                <p className="text-[11px] text-muted">
+                <p className="text-xs text-muted-foreground">
                   Live Claude Code sessions across all projects
                 </p>
               </div>
@@ -243,7 +243,7 @@ export default function SessionsPage() {
           <button
             onClick={() => setIsPolling(!isPolling)}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-all",
+              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
               isPolling
                 ? "border-green/20 bg-green/5 text-green hover:bg-green/10"
                 : "border-border text-muted-foreground hover:border-border-hover hover:text-foreground"
@@ -298,7 +298,7 @@ export default function SessionsPage() {
 
         {/* Error state */}
         {error && (
-          <div className="animate-fade-in rounded-lg border border-red/20 bg-red/5 px-4 py-3 text-[12px] text-red">
+          <div className="animate-fade-in rounded-lg border border-red/20 bg-red/5 px-4 py-3 text-sm text-red">
             {error}
           </div>
         )}
@@ -312,7 +312,7 @@ export default function SessionsPage() {
             <p className="mt-4 text-sm font-medium text-muted-foreground">
               No active sessions detected
             </p>
-            <p className="mt-1 text-[11px] text-muted">
+            <p className="mt-1 text-xs text-muted-foreground">
               Claude Code CLI sessions will appear here automatically
             </p>
           </div>

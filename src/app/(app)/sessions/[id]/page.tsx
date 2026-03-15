@@ -40,7 +40,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em]",
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider",
         status === "active" &&
           "border-green/20 bg-green/10 text-green",
         status === "idle" &&
@@ -144,33 +144,33 @@ function TimelineItem({ entry, index }: { entry: TimelineEntry; index: number })
       <div className="flex flex-col items-center pt-2.5">
         <div
           className={cn(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
             config.borderColor,
             config.bg
           )}
         >
-          <Icon className={cn("h-3 w-3", config.color)} />
+          <Icon className={cn("h-3.5 w-3.5", config.color)} />
         </div>
         <div className="mt-1 w-px flex-1 bg-border/40" />
       </div>
 
       {/* Content */}
       <div className="min-w-0 flex-1 pb-4">
-        <div className="flex items-center gap-2 pt-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted">
+        <div className="flex items-center gap-2.5 pt-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             {config.label}
           </span>
-          <span className="font-mono text-[10px] text-muted/60">
+          <span className="font-mono text-xs text-muted-foreground/70">
             {time}
           </span>
         </div>
         <p
           className={cn(
-            "mt-1 font-mono text-[11px] leading-relaxed break-words",
+            "mt-1.5 font-mono text-sm leading-relaxed break-words",
             entry.isError ? "text-red" : "text-muted-foreground",
-            entry.kind === "user" && "text-foreground font-sans text-[12px]",
-            entry.kind === "assistant" && "font-sans text-[12px]",
-            entry.kind === "tool_result" && !entry.isError && "text-muted"
+            entry.kind === "user" && "text-foreground font-sans",
+            entry.kind === "assistant" && "font-sans",
+            entry.kind === "tool_result" && !entry.isError && "text-muted-foreground/80"
           )}
         >
           {entry.text}
@@ -201,37 +201,37 @@ function SubAgentCard({
   return (
     <Link href={href}>
       <div
-        className="animate-slide-up group flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 transition-all hover:border-purple-400/30 hover:bg-purple-400/[0.03]"
+        className="animate-slide-up group flex items-center justify-between rounded-lg border border-border/60 px-4 py-3 transition-all hover:border-purple-400/30 hover:bg-purple-400/[0.03]"
         style={{ animationDelay: `${index * 50}ms` }}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-purple-400/20 bg-purple-400/10">
-              <Network className="h-2.5 w-2.5 text-purple-400" />
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-purple-400/20 bg-purple-400/10">
+              <Network className="h-3 w-3 text-purple-400" />
             </div>
-            <span className="font-mono text-[11px] font-semibold text-foreground">
+            <span className="font-mono text-sm font-semibold text-foreground">
               {agent.agentId.slice(0, 8)}
             </span>
             {agent.model && (
-              <span className="rounded border border-border bg-surface-raised px-1.5 py-px text-[9px] font-medium text-muted">
+              <span className="rounded border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {agent.model}
               </span>
             )}
-            <ArrowUpRight className="h-3 w-3 text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+            <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </div>
           {agent.prompt && (
-            <p className="mt-1 pl-7 text-[11px] leading-relaxed text-muted line-clamp-2">
+            <p className="mt-1.5 pl-[34px] text-sm leading-relaxed text-muted-foreground line-clamp-2">
               {agent.prompt}
             </p>
           )}
         </div>
-        <div className="ml-3 shrink-0 text-right space-y-0.5">
-          <div className="flex items-center justify-end gap-1 font-mono text-[10px] text-muted">
-            <Zap className="h-2.5 w-2.5" />
+        <div className="ml-4 shrink-0 text-right space-y-1">
+          <div className="flex items-center justify-end gap-1.5 font-mono text-xs text-muted-foreground">
+            <Zap className="h-3.5 w-3.5" />
             {formatTokens(total)}
           </div>
-          <div className="flex items-center justify-end gap-1 font-mono text-[10px] text-muted">
-            <MessageSquare className="h-2.5 w-2.5" />
+          <div className="flex items-center justify-end gap-1.5 font-mono text-xs text-muted-foreground">
+            <MessageSquare className="h-3.5 w-3.5" />
             {agent.messageCount}
           </div>
         </div>
@@ -261,11 +261,11 @@ function CollapsibleSection({
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2.5 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-2.5 py-2.5 text-sm font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
       >
-        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
+        <Icon className={cn("h-4 w-4", iconColor)} />
         {title}
-        <span className="rounded-full bg-surface-raised px-2 py-0.5 font-mono text-[10px] font-medium text-muted">
+        <span className="rounded-full bg-surface-raised px-2.5 py-0.5 font-mono text-xs font-medium text-muted-foreground">
           {count}
         </span>
         <div className="flex-1 border-t border-border/30" />
@@ -301,14 +301,14 @@ function TokenStat({
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
-        <span className="font-mono text-[10px] text-muted">
+        <span className="font-mono text-xs text-muted-foreground">
           {pct.toFixed(0)}%
         </span>
       </div>
-      <p className="font-mono text-xl font-bold tracking-tight text-foreground">
+      <p className="font-mono text-2xl font-bold tracking-tight text-foreground">
         {formatTokens(value)}
       </p>
       <div className="h-1 overflow-hidden rounded-full bg-surface-raised">
@@ -391,7 +391,7 @@ export default function SessionDetailPage() {
         </p>
         <Link
           href="/sessions"
-          className="inline-flex items-center gap-1.5 text-[12px] text-accent transition-colors hover:text-accent-dim"
+          className="inline-flex items-center gap-1.5 text-sm text-accent transition-colors hover:text-accent-dim"
         >
           <ArrowLeft className="h-3 w-3" />
           Back to Sessions
@@ -414,7 +414,7 @@ export default function SessionDetailPage() {
         <div className="animate-fade-in space-y-4">
           <Link
             href={subagentId ? parentHref : "/sessions"}
-            className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground group"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground group"
           >
             <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
             {subagentId ? "Back to Parent Session" : "Back to Sessions"}
@@ -428,7 +428,7 @@ export default function SessionDetailPage() {
                   {session.projectName}
                 </h1>
                 {session.slug && (
-                  <p className="mt-1 font-mono text-[12px] text-muted">
+                  <p className="mt-1 font-mono text-sm text-muted-foreground">
                     {session.slug}
                   </p>
                 )}
@@ -437,21 +437,21 @@ export default function SessionDetailPage() {
             </div>
 
             {/* Meta row */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               {session.model && (
                 <span className="flex items-center gap-1.5">
-                  <Cpu className="h-3.5 w-3.5" />
+                  <Cpu className="h-4 w-4" />
                   {session.model}
                 </span>
               )}
               {session.gitBranch && (
                 <span className="flex items-center gap-1.5">
-                  <GitBranch className="h-3.5 w-3.5" />
+                  <GitBranch className="h-4 w-4" />
                   <span className="font-mono">{session.gitBranch}</span>
                 </span>
               )}
               <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" />
+                <Clock className="h-4 w-4" />
                 Started{" "}
                 {formatDistanceToNow(new Date(session.created), {
                   addSuffix: true,
@@ -492,12 +492,12 @@ export default function SessionDetailPage() {
             style={{ animationDelay: "180ms" }}
           >
             <div className="flex items-center gap-1.5">
-              <Zap className="h-3 w-3 text-accent" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+              <Zap className="h-3.5 w-3.5 text-accent" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Total
               </span>
             </div>
-            <p className="font-mono text-xl font-bold tracking-tight text-accent">
+            <p className="font-mono text-2xl font-bold tracking-tight text-accent">
               {formatTokens(totalTokens)}
             </p>
             <div className="h-1 rounded-full bg-accent/20">
@@ -550,7 +550,7 @@ export default function SessionDetailPage() {
                     <TaskStatusIcon status={task.status} />
                     <span
                       className={cn(
-                        "text-[12px] leading-relaxed",
+                        "text-sm leading-relaxed",
                         task.status === "completed"
                           ? "text-muted-foreground line-through decoration-border"
                           : "text-foreground"
