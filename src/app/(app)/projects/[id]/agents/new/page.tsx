@@ -63,7 +63,7 @@ export default function NewAgentPage() {
       </div>
 
       <div className="px-8 lg:px-12 py-8">
-        <div className="border border-border bg-surface p-6 max-w-4xl">
+        <div className="border border-border bg-surface p-6">
           <AgentForm onSubmit={handleSubmit} submitLabel="deploy" />
         </div>
       </div>

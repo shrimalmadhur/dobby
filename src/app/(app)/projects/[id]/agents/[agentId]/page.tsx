@@ -646,7 +646,7 @@ export default function AgentDetailPage() {
           </div>
         </div>
         <div className="px-8 lg:px-12 py-8">
-          <div className="rounded-2xl border border-border bg-surface p-8 max-w-4xl">
+          <div className="rounded-2xl border border-border bg-surface p-8">
             <AgentForm
               initialValues={{
                 name: agent.name,
@@ -747,7 +747,7 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
-      <div className="px-8 lg:px-12 py-8 space-y-6 max-w-6xl">
+      <div className="px-8 lg:px-12 py-8 space-y-6">
         {/* Two-column layout for Soul/Skill + Telegram */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <CollapsibleSection title="Personality (Soul)" icon={Bot} iconColor="text-accent">
