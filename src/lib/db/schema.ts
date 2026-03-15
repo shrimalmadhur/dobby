@@ -93,6 +93,72 @@ export const notificationConfigs = sqliteTable("notification_configs", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
 });
 
+// ── Claude Sessions (persisted from ~/.claude/) ──────────────
+
+export const claudeSessions = sqliteTable("claude_sessions", {
+  sessionId: text("session_id").primaryKey(),
+  projectPath: text("project_path").notNull(),
+  projectName: text("project_name").notNull(),
+  projectDir: text("project_dir").notNull(),
+  workspaceName: text("workspace_name").notNull().default(""),
+  slug: text("slug"),
+  model: text("model"),
+  gitBranch: text("git_branch"),
+  status: text("status").notNull().default("completed"), // active | idle | completed
+  lastActivity: text("last_activity").notNull(),
+  created: text("created"),
+  lastAction: text("last_action"),
+  lastToolName: text("last_tool_name"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheCreationTokens: integer("cache_creation_tokens").notNull().default(0),
+  messageCount: integer("message_count").notNull().default(0),
+  isSubagent: integer("is_subagent", { mode: "boolean" }).notNull().default(false),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
+});
+
+export const claudeSessionTimeline = sqliteTable("claude_session_timeline", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull().references(() => claudeSessions.sessionId, { onDelete: "cascade" }),
+  projectDir: text("project_dir").notNull(),
+  subagentId: text("subagent_id"), // null for parent session
+  timestamp: text("timestamp").notNull(),
+  kind: text("kind").notNull(), // user | assistant | tool_use | tool_result | sub_agent | error
+  text: text("text").notNull(),
+  toolName: text("tool_name"),
+  isError: integer("is_error", { mode: "boolean" }).default(false),
+  agentId: text("agent_id"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  cacheReadTokens: integer("cache_read_tokens"),
+  cacheCreationTokens: integer("cache_creation_tokens"),
+});
+
+export const claudeSessionSubAgents = sqliteTable("claude_session_sub_agents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull().references(() => claudeSessions.sessionId, { onDelete: "cascade" }),
+  projectDir: text("project_dir").notNull(),
+  agentId: text("agent_id").notNull(),
+  prompt: text("prompt"),
+  model: text("model"),
+  messageCount: integer("message_count").notNull().default(0),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheCreationTokens: integer("cache_creation_tokens").notNull().default(0),
+});
+
+export const claudeSessionTasks = sqliteTable("claude_session_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull().references(() => claudeSessions.sessionId, { onDelete: "cascade" }),
+  projectDir: text("project_dir").notNull(),
+  taskId: text("task_id").notNull(),
+  subject: text("subject").notNull(),
+  status: text("status").notNull(),
+  activeForm: text("active_form"),
+});
+
 // ── Agent Runs ────────────────────────────────────────────────
 
 export const agentRuns = sqliteTable("agent_runs", {
