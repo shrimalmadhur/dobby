@@ -190,6 +190,9 @@ export function ClaudePanel({
     const abortController = new AbortController();
     abortRef.current = abortController;
 
+    // Add empty assistant message immediately so loading dots show
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
     try {
       const res = await fetch("/api/claude/prompt", {
         method: "POST",
@@ -199,10 +202,14 @@ export function ClaudePanel({
       });
 
       if (!res.ok || !res.body) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "Error: Failed to connect to Claude CLI." },
-        ]);
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "Error: Failed to connect to Claude CLI.",
+          };
+          return updated;
+        });
         setStreaming(false);
         return;
       }
@@ -211,9 +218,6 @@ export function ClaudePanel({
       const decoder = new TextDecoder();
       let assistantText = "";
       let buffer = "";
-
-      // Add empty assistant message that we'll build up
-      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
       while (true) {
         const { done, value } = await reader.read();
@@ -268,11 +272,24 @@ export function ClaudePanel({
         }
       }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setMessages((prev) => [
-          ...prev.slice(0, -1),
-          { role: "assistant", content: "Error: Claude CLI request failed." },
-        ]);
+      if ((err as Error).name === "AbortError") {
+        // Remove empty assistant message if aborted before content arrived
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.content === "") {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      } else {
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "Error: Claude CLI request failed.",
+          };
+          return updated;
+        });
       }
     } finally {
       setStreaming(false);
@@ -290,6 +307,14 @@ export function ClaudePanel({
   const handleStop = () => {
     abortRef.current?.abort();
     setStreaming(false);
+    // Remove empty assistant message if stop was clicked before any content arrived
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant" && last.content === "") {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
   };
 
   if (collapsed) {
