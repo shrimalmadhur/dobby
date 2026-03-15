@@ -13,8 +13,11 @@ import { runAgentTask } from "../src/lib/runner/agent-runner";
 import { sendAgentResult, getAgentTelegramConfig } from "../src/lib/runner/telegram-sender";
 import { logRun, getRecentOutputs } from "../src/lib/runner/run-log";
 import type { AgentDefinition } from "../src/lib/runner/types";
+import { autoMigrateFilesystemAgents } from "../src/lib/db/auto-migrate";
 
 async function main() {
+  await autoMigrateFilesystemAgents();
+
   const args = process.argv.slice(2);
 
   // Parse --project flag
