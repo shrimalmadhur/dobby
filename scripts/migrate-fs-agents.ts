@@ -10,7 +10,7 @@ if (fs.existsSync(".env.local")) {
 
 import { db } from "../src/lib/db";
 import { projects, agents, notificationConfigs } from "../src/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { loadAgentDefinitions } from "../src/lib/runner/config-loader";
 
 async function main() {
@@ -59,7 +59,7 @@ async function main() {
     const existingAgent = await db
       .select()
       .from(agents)
-      .where(eq(agents.name, def.config.name))
+      .where(and(eq(agents.name, def.config.name), eq(agents.projectId, projectId)))
       .limit(1);
 
     if (existingAgent.length > 0) {

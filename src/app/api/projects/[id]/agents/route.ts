@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { agents, projects, agentRuns } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { createAgentSchema } from "@/lib/validations/agent";
 import { cronToHuman } from "@/lib/utils/cron";
 
@@ -28,40 +28,43 @@ export async function GET(
       .from(agents)
       .where(eq(agents.projectId, id));
 
-    const result = await Promise.all(
-      projectAgents.map(async (agent) => {
-        // Get last run
-        const latestRuns = await db
+    // Batch-fetch latest run for all agents in one query
+    const agentIds = projectAgents.map((a) => a.id);
+    const latestRuns = agentIds.length > 0
+      ? await db
           .select()
           .from(agentRuns)
-          .where(eq(agentRuns.agentId, agent.id))
-          .orderBy(desc(agentRuns.createdAt))
-          .limit(1);
+          .where(
+            sql`${agentRuns.agentId} IN (${sql.join(agentIds.map((id) => sql`${id}`), sql`, `)}) AND ${agentRuns.createdAt} = (SELECT MAX(created_at) FROM agent_runs ar2 WHERE ar2.agent_id = ${agentRuns.agentId})`
+          )
+      : [];
 
-        const lastRun = latestRuns[0] || null;
+    const runsByAgentId = new Map(latestRuns.map((r) => [r.agentId, r]));
 
-        return {
-          id: agent.id,
-          name: agent.name,
-          enabled: agent.enabled,
-          schedule: agent.schedule,
-          scheduleHuman: cronToHuman(agent.schedule),
-          timezone: agent.timezone,
-          envVarCount: Object.keys((agent.envVars as Record<string, string>) || {}).length,
-          soulExcerpt: agent.soul.slice(0, 150).replace(/\n/g, " ").trim(),
-          lastRun: lastRun
-            ? {
-                status: lastRun.status,
-                createdAt: lastRun.createdAt?.toISOString() || null,
-                durationMs: lastRun.durationMs,
-                promptTokens: lastRun.promptTokens,
-                completionTokens: lastRun.completionTokens,
-                error: lastRun.error,
-              }
-            : null,
-        };
-      })
-    );
+    const result = projectAgents.map((agent) => {
+      const lastRun = runsByAgentId.get(agent.id) || null;
+
+      return {
+        id: agent.id,
+        name: agent.name,
+        enabled: agent.enabled,
+        schedule: agent.schedule,
+        scheduleHuman: cronToHuman(agent.schedule),
+        timezone: agent.timezone,
+        envVarCount: Object.keys((agent.envVars as Record<string, string>) || {}).length,
+        soulExcerpt: agent.soul.slice(0, 150).replace(/\n/g, " ").trim(),
+        lastRun: lastRun
+          ? {
+              status: lastRun.status,
+              createdAt: lastRun.createdAt?.toISOString() || null,
+              durationMs: lastRun.durationMs,
+              promptTokens: lastRun.promptTokens,
+              completionTokens: lastRun.completionTokens,
+              error: lastRun.error,
+            }
+          : null,
+      };
+    });
 
     return NextResponse.json({ agents: result });
   } catch (error) {

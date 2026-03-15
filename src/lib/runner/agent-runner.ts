@@ -64,20 +64,32 @@ export async function runAgentTask(
     "--append-system-prompt", definition.soul,
   ];
 
-  // Merge agent env vars with process env
+  // Merge agent env vars with process env (deny-list dangerous keys)
+  const DENIED_ENV_KEYS = new Set([
+    "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "NODE_OPTIONS",
+    "HOME", "SHELL", "USER", "LOGNAME", "DYLD_INSERT_LIBRARIES",
+  ]);
   const childEnv: NodeJS.ProcessEnv = { ...process.env };
   const envVars = definition.config.envVars;
   if (envVars) {
     for (const [key, value] of Object.entries(envVars)) {
-      childEnv[key] = value;
+      if (!DENIED_ENV_KEYS.has(key.toUpperCase())) {
+        childEnv[key] = value;
+      }
     }
   }
   childEnv.FORCE_COLOR = "0";
+
+  const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   return new Promise<RunResult>((resolve) => {
     const proc: ChildProcess = spawn("claude", args, {
       env: childEnv,
     });
+
+    const agentTimer = setTimeout(() => {
+      proc.kill("SIGTERM");
+    }, AGENT_TIMEOUT_MS);
 
     proc.stdin!.write(prompt);
     proc.stdin!.end();
@@ -170,9 +182,11 @@ export async function runAgentTask(
     let stderrOutput = "";
     proc.stderr!.on("data", (chunk: Buffer) => {
       stderrOutput += chunk.toString();
+      if (stderrOutput.length > 10000) stderrOutput = stderrOutput.slice(-10000);
     });
 
     proc.on("close", (code: number | null) => {
+      clearTimeout(agentTimer);
       const durationMs = Date.now() - startTime;
 
       if (code !== 0 && !resultText) {
@@ -203,6 +217,7 @@ export async function runAgentTask(
     });
 
     proc.on("error", (err: Error) => {
+      clearTimeout(agentTimer);
       resolve({
         agentName: definition.config.name,
         agentId: definition.agentId,

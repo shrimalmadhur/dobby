@@ -26,6 +26,20 @@ const inputClasses =
 
 const labelClasses = "block text-[11px] font-mono text-muted uppercase tracking-widest mb-1";
 
+type EnvVarEntry = { key: string; value: string };
+
+function recordToEntries(record: Record<string, string>): EnvVarEntry[] {
+  return Object.entries(record).map(([key, value]) => ({ key, value }));
+}
+
+function entriesToRecord(entries: EnvVarEntry[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const { key, value } of entries) {
+    if (key.trim()) result[key.trim()] = value;
+  }
+  return result;
+}
+
 function EnvVarsEditor({
   envVars,
   onChange,
@@ -33,47 +47,58 @@ function EnvVarsEditor({
   envVars: Record<string, string>;
   onChange: (vars: Record<string, string>) => void;
 }) {
-  const [showValues, setShowValues] = useState<Record<string, boolean>>({});
-  const entries = Object.entries(envVars);
+  const [entries, setEntries] = useState<EnvVarEntry[]>(() => recordToEntries(envVars));
+  const [showValues, setShowValues] = useState<Record<number, boolean>>({});
 
-  const addVar = () => { onChange({ ...envVars, "": "" }); };
-
-  const updateKey = (oldKey: string, newKey: string, index: number) => {
-    const newVars: Record<string, string> = {};
-    let i = 0;
-    for (const [k, v] of Object.entries(envVars)) {
-      newVars[i === index ? newKey : k] = v;
-      i++;
-    }
-    onChange(newVars);
+  const sync = (updated: EnvVarEntry[]) => {
+    setEntries(updated);
+    onChange(entriesToRecord(updated));
   };
 
-  const updateValue = (key: string, value: string) => { onChange({ ...envVars, [key]: value }); };
-  const removeVar = (key: string) => { const n = { ...envVars }; delete n[key]; onChange(n); };
-  const toggleShow = (key: string) => { setShowValues((p) => ({ ...p, [key]: !p[key] })); };
+  const addVar = () => sync([...entries, { key: "", value: "" }]);
+
+  const updateKey = (index: number, newKey: string) => {
+    const updated = [...entries];
+    updated[index] = { ...updated[index], key: newKey };
+    sync(updated);
+  };
+
+  const updateValue = (index: number, value: string) => {
+    const updated = [...entries];
+    updated[index] = { ...updated[index], value };
+    sync(updated);
+  };
+
+  const removeVar = (index: number) => {
+    sync(entries.filter((_, i) => i !== index));
+  };
+
+  const toggleShow = (index: number) => {
+    setShowValues((p) => ({ ...p, [index]: !p[index] }));
+  };
 
   return (
     <div className="space-y-1.5">
-      {entries.map(([key, value], idx) => (
+      {entries.map((entry, idx) => (
         <div key={idx} className="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-1.5">
           <input
             type="text"
-            value={key}
-            onChange={(e) => updateKey(key, e.target.value, idx)}
+            value={entry.key}
+            onChange={(e) => updateKey(idx, e.target.value)}
             placeholder="KEY_NAME"
             className={`${inputClasses} uppercase`}
           />
           <input
-            type={showValues[key] ? "text" : "password"}
-            value={value}
-            onChange={(e) => updateValue(key, e.target.value)}
+            type={showValues[idx] ? "text" : "password"}
+            value={entry.value}
+            onChange={(e) => updateValue(idx, e.target.value)}
             placeholder="value"
             className={inputClasses}
           />
-          <button type="button" onClick={() => toggleShow(key)} className="border border-border p-1.5 text-muted hover:text-foreground hover:border-accent transition-colors">
-            {showValues[key] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+          <button type="button" onClick={() => toggleShow(idx)} className="border border-border p-1.5 text-muted hover:text-foreground hover:border-accent transition-colors">
+            {showValues[idx] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           </button>
-          <button type="button" onClick={() => removeVar(key)} className="border border-red/20 p-1.5 text-red/40 hover:text-red hover:border-red/40 transition-colors">
+          <button type="button" onClick={() => removeVar(idx)} className="border border-red/20 p-1.5 text-red/40 hover:text-red hover:border-red/40 transition-colors">
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
@@ -109,11 +134,7 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: AgentFormPro
     setError(null);
     setSubmitting(true);
     try {
-      const cleanedEnvVars: Record<string, string> = {};
-      for (const [k, v] of Object.entries(form.envVars)) {
-        if (k.trim()) cleanedEnvVars[k.trim()] = v;
-      }
-      await onSubmit({ ...form, envVars: cleanedEnvVars });
+      await onSubmit(form);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

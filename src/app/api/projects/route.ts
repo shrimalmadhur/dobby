@@ -1,30 +1,31 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projects, agents } from "@/lib/db/schema";
-import { eq, count, desc } from "drizzle-orm";
+import { eq, count, desc, sql } from "drizzle-orm";
 import { createProjectSchema } from "@/lib/validations/project";
 
 export async function GET() {
   try {
-    const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
-
-    const result = await Promise.all(
-      allProjects.map(async (project) => {
-        const agentCountResult = await db
-          .select({ count: count() })
-          .from(agents)
-          .where(eq(agents.projectId, project.id));
-
-        return {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          agentCount: agentCountResult[0]?.count || 0,
-          createdAt: project.createdAt.toISOString(),
-          updatedAt: project.updatedAt.toISOString(),
-        };
+    const rows = await db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        description: projects.description,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        agentCount: sql<number>`(SELECT COUNT(*) FROM agents WHERE agents.project_id = ${projects.id})`,
       })
-    );
+      .from(projects)
+      .orderBy(desc(projects.createdAt));
+
+    const result = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      agentCount: row.agentCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    }));
 
     return NextResponse.json({ projects: result });
   } catch (error) {
