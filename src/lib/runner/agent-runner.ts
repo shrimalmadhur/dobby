@@ -4,13 +4,14 @@ import { join } from "node:path";
 import type { AgentDefinition, RunResult, ToolUseLog } from "./types";
 import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 import type { RunEvent } from "./run-events";
+import { readWorkspaceMemory, formatMemoryForPrompt, MEMORY_SYSTEM_INSTRUCTIONS } from "./agent-memory";
 
 /**
  * Build the user message from skill + context.
  */
 function buildUserMessage(
   definition: AgentDefinition,
-  context?: { recentOutputs?: string[] }
+  context?: { recentOutputs?: string[]; workspaceMemory?: string }
 ): string {
   const parts: string[] = [];
 
@@ -30,6 +31,12 @@ function buildUserMessage(
     parts.push("Use these to access external services as needed for your task.");
   }
 
+  // Inject workspace memory (agent's own persistent memory file)
+  if (context?.workspaceMemory) {
+    parts.push("");
+    parts.push(formatMemoryForPrompt(context.workspaceMemory));
+  }
+
   if (context?.recentOutputs?.length) {
     parts.push("");
     parts.push(`## Recent outputs (do NOT repeat these topics)`);
@@ -46,9 +53,21 @@ function buildUserMessage(
 }
 
 /**
+ * Resolve the workspace directory for an agent.
+ */
+export function getAgentWorkspaceDir(definition: AgentDefinition): string {
+  const safeDirName = definition.agentId || definition.config.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return join(process.cwd(), "data", "workspaces", safeDirName);
+}
+
+/**
  * Run an agent task via Claude CLI.
  * Spawns `claude -p` with the agent's env vars and full tool access.
  * Parses stream-json output for tool use logging.
+ *
+ * Before spawning, reads the agent's `memory.md` from its workspace and
+ * injects it into the prompt. The agent is instructed to update memory.md
+ * at the end of each run with domain-specific learnings.
  */
 export async function runAgentTask(
   definition: AgentDefinition,
@@ -56,17 +75,33 @@ export async function runAgentTask(
   onEvent?: (event: RunEvent) => void
 ): Promise<RunResult> {
   const startTime = Date.now();
-  const userMessage = buildUserMessage(definition, context);
+
+  // Create a persistent workspace directory for this agent so it can
+  // install packages, write temp files, etc. across runs.
+  const workspaceDir = getAgentWorkspaceDir(definition);
+  mkdirSync(workspaceDir, { recursive: true });
+
+  // Read the agent's persistent memory file from its workspace
+  const workspaceMemory = readWorkspaceMemory(workspaceDir);
+
+  const userMessage = buildUserMessage(definition, {
+    ...context,
+    workspaceMemory,
+  });
 
   // Build the full prompt: soul as system prompt context + user message
   const prompt = userMessage;
+
+  // Append memory system instructions to the soul so the agent knows
+  // how to maintain its memory.md file
+  const systemPrompt = definition.soul + MEMORY_SYSTEM_INSTRUCTIONS;
 
   const args = [
     "-p",
     "--verbose",
     "--output-format", "stream-json",
     "--dangerously-skip-permissions",
-    "--append-system-prompt", definition.soul,
+    "--append-system-prompt", systemPrompt,
   ];
 
   // Merge agent env vars with process env (deny-list dangerous keys)
@@ -84,12 +119,6 @@ export async function runAgentTask(
     }
   }
   childEnv.FORCE_COLOR = "0";
-
-  // Create a persistent workspace directory for this agent so it can
-  // install packages, write temp files, etc. across runs.
-  const safeDirName = definition.agentId || definition.config.name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const workspaceDir = join(process.cwd(), "data", "workspaces", safeDirName);
-  mkdirSync(workspaceDir, { recursive: true });
 
   const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 

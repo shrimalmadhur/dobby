@@ -78,6 +78,8 @@ async function main() {
       console.warn("Could not load recent outputs (table may not exist yet)");
     }
 
+    // Memory is handled inside runAgentTask — it reads the agent's
+    // workspace memory.md file and injects it into the prompt automatically.
     const result = await runAgentTask(def, { recentOutputs });
     console.log(`Status: ${result.success ? "SUCCESS" : "FAILED"}`);
     console.log(
