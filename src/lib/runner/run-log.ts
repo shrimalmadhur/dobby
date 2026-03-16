@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { agentRuns, agentRunToolUses } from "@/lib/db/schema";
-import { eq, desc, and, gte } from "drizzle-orm";
 import type { RunResult } from "./types";
 
 /**
@@ -33,35 +32,4 @@ export async function logRun(result: RunResult): Promise<void> {
       }))
     );
   }
-}
-
-/**
- * Get recent successful outputs for an agent (for context injection / topic dedup).
- * Prefers agentId lookup for DB agents, falls back to agentName for filesystem agents.
- */
-export async function getRecentOutputs(
-  agentName: string,
-  days: number = 30,
-  agentId?: string
-): Promise<string[]> {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-  const nameFilter = agentId
-    ? eq(agentRuns.agentId, agentId)
-    : eq(agentRuns.agentName, agentName);
-
-  const runs = await db
-    .select({ output: agentRuns.output })
-    .from(agentRuns)
-    .where(
-      and(
-        nameFilter,
-        eq(agentRuns.status, "success"),
-        gte(agentRuns.createdAt, since)
-      )
-    )
-    .orderBy(desc(agentRuns.createdAt))
-    .limit(30);
-
-  return runs.map((r) => r.output).filter((o): o is string => o !== null);
 }

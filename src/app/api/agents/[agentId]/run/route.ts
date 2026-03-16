@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { runAgentTask } from "@/lib/runner/agent-runner";
-import { logRun, getRecentOutputs } from "@/lib/runner/run-log";
+import { logRun } from "@/lib/runner/run-log";
 import { getAgentTelegramConfig, sendAgentResult } from "@/lib/runner/telegram-sender";
 import { agentRowToDefinition } from "@/lib/runner/db-config-loader";
 import { startRun, emitRunEvent, endRun } from "@/lib/runner/run-events";
@@ -49,9 +49,6 @@ export async function POST(
 
     const definition = agentRowToDefinition(agent);
 
-    // Get recent outputs for context (topic dedup)
-    const recentOutputs = await getRecentOutputs(agent.name, 30, agent.id);
-
     runningAgents.add(agentId);
     startRun(agentId);
     emitRunEvent(agentId, {
@@ -60,11 +57,11 @@ export async function POST(
       data: { agentName: agent.name },
     });
 
-    // Memory is handled inside runAgentTask — it reads the agent's
-    // workspace memory.md file and injects it into the prompt automatically.
+    // Memory-based dedup is handled inside runAgentTask — it reads the
+    // agent's workspace memory.md file and injects it into the prompt.
     let result;
     try {
-      result = await runAgentTask(definition, { recentOutputs }, (event) => {
+      result = await runAgentTask(definition, (event) => {
         emitRunEvent(agentId, event);
       });
     } finally {

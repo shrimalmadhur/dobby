@@ -11,7 +11,7 @@ import { readWorkspaceMemory, formatMemoryForPrompt, MEMORY_SYSTEM_INSTRUCTIONS 
  */
 function buildUserMessage(
   definition: AgentDefinition,
-  context?: { recentOutputs?: string[]; workspaceMemory?: string }
+  context?: { workspaceMemory?: string }
 ): string {
   const parts: string[] = [];
 
@@ -45,15 +45,6 @@ function buildUserMessage(
     parts.push(formatMemoryForPrompt(context.workspaceMemory));
   }
 
-  if (context?.recentOutputs?.length) {
-    parts.push("");
-    parts.push(`## Recent outputs (do NOT repeat these topics)`);
-    for (const output of context.recentOutputs.slice(0, 10)) {
-      const firstLine = output.split("\n")[0].substring(0, 100);
-      parts.push(`- ${firstLine}`);
-    }
-  }
-
   parts.push("");
   parts.push(definition.skill);
 
@@ -79,7 +70,6 @@ export function getAgentWorkspaceDir(definition: AgentDefinition): string {
  */
 export async function runAgentTask(
   definition: AgentDefinition,
-  context?: { recentOutputs?: string[] },
   onEvent?: (event: RunEvent) => void
 ): Promise<RunResult> {
   const startTime = Date.now();
@@ -92,10 +82,7 @@ export async function runAgentTask(
   // Read the agent's persistent memory file from its workspace
   const workspaceMemory = readWorkspaceMemory(workspaceDir);
 
-  const userMessage = buildUserMessage(definition, {
-    ...context,
-    workspaceMemory,
-  });
+  const userMessage = buildUserMessage(definition, { workspaceMemory });
 
   // Build the full prompt: soul as system prompt context + user message
   const prompt = userMessage;
@@ -145,6 +132,7 @@ export async function runAgentTask(
 
     let buffer = "";
     let resultText = "";
+    const assistantTextBlocks: string[] = [];
     let model = "claude";
     let promptTokens = 0;
     let completionTokens = 0;
@@ -197,6 +185,7 @@ export async function runAgentTask(
                     },
                   });
                 } else if (block.type === "text" && block.text) {
+                  assistantTextBlocks.push(block.text);
                   onEvent?.({
                     type: "text",
                     timestamp: Date.now(),
@@ -263,30 +252,28 @@ export async function runAgentTask(
       clearTimeout(agentTimer);
       const durationMs = Date.now() - startTime;
 
-      if (code !== 0 && !resultText) {
-        resolve({
-          agentName: definition.config.name,
-          agentId: definition.agentId,
-          success: false,
-          output: "",
-          model,
-          tokensUsed: { prompt: promptTokens, completion: completionTokens },
-          toolUses,
-          durationMs,
-          error: stderrOutput || `Claude CLI exited with code ${code}`,
-        });
-        return;
+      const isSuccess = code === 0 || code === null;
+
+      // Prefer resultText (from the `result` event — the agent's final
+      // response).  If it looks like a housekeeping remark rather than the
+      // real deliverable, fall back to the last assistant text block which
+      // is more likely to contain the actual output.
+      const HOUSEKEEPING_RE = /^(memory (updated|saved)|updated memory|done\.?|ok\.?)$/i;
+      let finalOutput = resultText;
+      if ((!finalOutput || HOUSEKEEPING_RE.test(finalOutput.trim())) && assistantTextBlocks.length > 0) {
+        finalOutput = assistantTextBlocks[assistantTextBlocks.length - 1];
       }
 
       resolve({
         agentName: definition.config.name,
         agentId: definition.agentId,
-        success: true,
-        output: resultText,
+        success: isSuccess,
+        output: finalOutput,
         model,
         tokensUsed: { prompt: promptTokens, completion: completionTokens },
         toolUses,
         durationMs,
+        ...(isSuccess ? {} : { error: stderrOutput || `Claude CLI exited with code ${code}` }),
       });
     });
 

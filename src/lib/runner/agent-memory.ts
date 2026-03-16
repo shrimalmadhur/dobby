@@ -52,9 +52,11 @@ export const MEMORY_SYSTEM_INSTRUCTIONS = `
 You have a persistent memory file at \`./memory.md\` in your workspace directory.
 This file survives across runs — anything you write there will be available next time.
 
+**IMPORTANT**: Your primary job is to complete your task and produce the full deliverable as your text response. Memory management is a secondary housekeeping step — never let it replace your actual output. Every run must produce the same quality and depth of output regardless of whether it's the first or hundredth run.
+
 **At the START of each run**: Your current memory file contents are provided in the prompt under "Your Memory (from previous runs)". You don't need to read the file yourself.
 
-**At the END of each run**: You MUST update \`./memory.md\` with anything worth remembering.
+**At the END of each run, after producing your full output**: Briefly update \`./memory.md\` to track what you did.
 Write to it using your file tools (write_file, bash echo, etc.).
 
 ### What to track
