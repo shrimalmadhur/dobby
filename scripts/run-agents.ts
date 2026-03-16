@@ -12,7 +12,7 @@ if (fs.existsSync(".env.local")) {
 import { loadAgentDefinitionsFromDB } from "../src/lib/runner/db-config-loader";
 import { runAgentTask } from "../src/lib/runner/agent-runner";
 import { sendAgentResult, getAgentTelegramConfig } from "../src/lib/runner/telegram-sender";
-import { logRun, getRecentOutputs } from "../src/lib/runner/run-log";
+import { logRun } from "../src/lib/runner/run-log";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -69,18 +69,9 @@ async function main() {
   for (const def of toRun) {
     console.log(`\n--- Running agent: ${def.config.name} ---`);
 
-    // Get recent outputs for context (topic dedup)
-    let recentOutputs: string[] = [];
-    try {
-      recentOutputs = await getRecentOutputs(def.config.name, 30, def.agentId);
-    } catch {
-      // DB might not have the table yet on first run
-      console.warn("Could not load recent outputs (table may not exist yet)");
-    }
-
-    // Memory is handled inside runAgentTask — it reads the agent's
-    // workspace memory.md file and injects it into the prompt automatically.
-    const result = await runAgentTask(def, { recentOutputs });
+    // Memory-based dedup is handled inside runAgentTask — it reads the
+    // agent's workspace memory.md file and injects it into the prompt.
+    const result = await runAgentTask(def);
     console.log(`Status: ${result.success ? "SUCCESS" : "FAILED"}`);
     console.log(
       `Model: ${result.model} | Tokens: ${result.tokensUsed.prompt + result.tokensUsed.completion} | Time: ${(result.durationMs / 1000).toFixed(1)}s`
