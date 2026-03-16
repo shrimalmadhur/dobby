@@ -364,6 +364,36 @@ else
     fi
 fi
 
+# --- Configure passwordless sudo for agent package installation (Linux only) ---
+# On macOS, Homebrew runs as the user and doesn't need sudo.
+if [ "$OS" = "Linux" ]; then
+    echo ""
+    echo "Configuring sudo for agent runners..."
+    SUDOERS_FILE="/etc/sudoers.d/jarvis-agent"
+    # Only grant NOPASSWD for repo-based package managers actually present.
+    # Deliberately excludes dpkg/rpm — they install arbitrary local files
+    # (including post-install scripts as root) with no provenance check.
+    SUDOERS_RULES=""
+    command -v apt-get &>/dev/null && SUDOERS_RULES+="$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt\n"
+    command -v dnf &>/dev/null && SUDOERS_RULES+="$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/dnf\n"
+    command -v yum &>/dev/null && SUDOERS_RULES+="$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/yum\n"
+    command -v pacman &>/dev/null && SUDOERS_RULES+="$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/pacman\n"
+    command -v apk &>/dev/null && SUDOERS_RULES+="$ACTUAL_USER ALL=(ALL) NOPASSWD: /sbin/apk\n"
+
+    if [ -z "$SUDOERS_RULES" ]; then
+        yellow "  No supported package manager found, skipping sudoers"
+    else
+        printf "# Allow Jarvis agents to install packages without a password prompt.\n# Needed because agent subprocesses run non-interactively (no TTY).\n%b" "$SUDOERS_RULES" > "$SUDOERS_FILE"
+    fi
+    chmod 440 "$SUDOERS_FILE"
+    if visudo -cf "$SUDOERS_FILE" > /dev/null 2>&1; then
+        green "  Passwordless sudo configured for package managers"
+    else
+        red "  Warning: sudoers file validation failed, removing"
+        rm -f "$SUDOERS_FILE"
+    fi
+fi
+
 # --- Install agent cron jobs ---
 echo ""
 echo "Installing agent cron jobs..."
