@@ -8,6 +8,7 @@ export type RunEventType =
   | "tool_start"
   | "tool_result"
   | "text"
+  | "memory_update"
   | "complete";
 
 export interface RunEvent {
