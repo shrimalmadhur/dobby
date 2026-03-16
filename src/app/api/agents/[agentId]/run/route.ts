@@ -71,6 +71,8 @@ export async function POST(
       data: { agentName: agent.name },
     });
 
+    // Memory is handled inside runAgentTask — it reads the agent's
+    // workspace memory.md file and injects it into the prompt automatically.
     let result;
     try {
       result = await runAgentTask(definition, { recentOutputs }, (event) => {
