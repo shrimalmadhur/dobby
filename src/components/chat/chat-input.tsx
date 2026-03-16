@@ -61,7 +61,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200",
           hasContent && !disabled
-            ? "bg-accent text-background hover:bg-accent-dim"
+            ? "bg-accent text-accent-foreground hover:bg-accent-dim"
             : "bg-surface-raised text-muted"
         )}
       >

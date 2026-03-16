@@ -57,7 +57,7 @@ agents/                                # Legacy filesystem agent definitions (de
 src/
   app/
     page.tsx                          # Redirect to /chat
-    layout.tsx                        # Root layout (DM Sans + JetBrains Mono fonts)
+    layout.tsx                        # Root layout (Inter + JetBrains Mono fonts)
     globals.css                       # Dark theme, CSS custom properties, Tailwind v4 @theme
     (app)/
       layout.tsx                      # Sidebar + main area

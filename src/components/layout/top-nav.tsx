@@ -54,18 +54,17 @@ export function TopNav({ onNewChat }: TopNavProps) {
   return (
     <nav className="flex h-11 shrink-0 items-center border-b border-border bg-surface px-5">
       {/* Brand */}
-      <Link href="/chat" className="flex items-center gap-2 mr-6">
-        <span className="text-[17px] font-bold tracking-[0.2em] text-accent glow-text">
-          JARVIS
+      <Link href="/chat" className="flex items-center gap-2.5 mr-6">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent">
+          <span className="text-[11px] font-bold text-accent-foreground">J</span>
+        </div>
+        <span className="text-[15px] font-bold tracking-wide text-foreground">
+          Jarvis
         </span>
-        <span className="text-[12px] text-muted font-mono">v1.0</span>
       </Link>
 
-      {/* Separator */}
-      <span className="text-muted mr-4 text-[15px]">//</span>
-
       {/* Tabs */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -80,14 +79,13 @@ export function TopNav({ onNewChat }: TopNavProps) {
               key={item.href}
               href={item.href}
               className={cn(
-                "relative flex items-center gap-1.5 px-3 py-1 text-[15px] font-mono transition-colors duration-100",
+                "relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all duration-150",
                 isActive
-                  ? "text-accent glow-text"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-accent/15 text-accent"
+                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
               )}
             >
-              {isActive && <span className="text-accent mr-0.5">&gt;</span>}
-              <Icon className={cn("h-4 w-4", isActive && "text-accent")} />
+              <Icon className="h-4 w-4" />
               {item.label}
             </Link>
           );
@@ -100,13 +98,13 @@ export function TopNav({ onNewChat }: TopNavProps) {
       {/* Status */}
       <div className="flex items-center gap-2 mr-4">
         <span className="h-1.5 w-1.5 rounded-full bg-green status-dot-live" />
-        <span className="text-[12px] text-muted-foreground font-mono uppercase">online</span>
+        <span className="text-[12px] text-muted-foreground">Online</span>
       </div>
 
       {/* Theme toggle */}
       <button
         onClick={toggleTheme}
-        className="flex h-7 w-7 items-center justify-center border border-border text-muted-foreground transition-colors hover:text-accent hover:border-accent mr-2"
+        className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground hover:bg-surface-hover mr-2"
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       >
         {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
@@ -116,11 +114,11 @@ export function TopNav({ onNewChat }: TopNavProps) {
       {isOnChat && (
         <button
           onClick={onNewChat}
-          className="flex h-7 items-center gap-1 border border-border px-2.5 text-[13px] font-mono text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+          className="flex h-7 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-medium text-accent-foreground transition-colors hover:bg-accent-dim"
           title="New chat"
         >
-          <Plus className="h-3 w-3" />
-          new
+          <Plus className="h-3.5 w-3.5" />
+          New
         </button>
       )}
     </nav>

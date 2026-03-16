@@ -251,7 +251,7 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: AgentFormPro
         <button
           type="submit"
           disabled={submitting}
-          className="border border-accent bg-accent/10 px-5 py-2 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 hover:shadow-[0_0_12px_rgba(232,164,74,0.15)] disabled:opacity-40"
+          className="border border-accent bg-accent/10 px-5 py-2 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 hover:shadow-[0_0_12px_rgba(124,58,237,0.15)] disabled:opacity-40"
         >
           {submitting ? (
             <span className="flex items-center gap-1.5">
@@ -266,7 +266,7 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: AgentFormPro
           <button
             type="button"
             onClick={() => setShowClaude(true)}
-            className="flex items-center gap-1.5 border border-accent/30 px-4 py-2 text-[13px] font-mono text-accent/70 transition-all hover:border-accent hover:text-accent hover:shadow-[0_0_12px_rgba(232,164,74,0.1)]"
+            className="flex items-center gap-1.5 border border-accent/30 px-4 py-2 text-[13px] font-mono text-accent/70 transition-all hover:border-accent hover:text-accent hover:shadow-[0_0_12px_rgba(124,58,237,0.1)]"
           >
             <Sparkles className="h-3.5 w-3.5" />
             ask claude
