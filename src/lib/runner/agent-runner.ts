@@ -4,14 +4,14 @@ import { join } from "node:path";
 import type { AgentDefinition, RunResult, ToolUseLog } from "./types";
 import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 import type { RunEvent } from "./run-events";
-import { readWorkspaceMemory, formatMemoryForPrompt, MEMORY_SYSTEM_INSTRUCTIONS } from "./agent-memory";
+import { readWorkspaceMemory, formatMemoryForPrompt, MEMORY_CONTEXT_NOTE, updateMemoryAfterRun, buildChildEnv, hasWorkspaceArchive } from "./agent-memory";
 
 /**
  * Build the user message from skill + context.
  */
 function buildUserMessage(
   definition: AgentDefinition,
-  context?: { workspaceMemory?: string }
+  context?: { workspaceMemory?: string; hasArchive?: boolean }
 ): string {
   const parts: string[] = [];
 
@@ -42,7 +42,7 @@ function buildUserMessage(
   // Inject workspace memory (agent's own persistent memory file)
   if (context?.workspaceMemory) {
     parts.push("");
-    parts.push(formatMemoryForPrompt(context.workspaceMemory));
+    parts.push(formatMemoryForPrompt(context.workspaceMemory, context.hasArchive));
   }
 
   parts.push("");
@@ -60,13 +60,18 @@ export function getAgentWorkspaceDir(definition: AgentDefinition): string {
 }
 
 /**
- * Run an agent task via Claude CLI.
- * Spawns `claude -p` with the agent's env vars and full tool access.
- * Parses stream-json output for tool use logging.
+ * Run an agent task via Claude CLI using two-phase execution.
  *
- * Before spawning, reads the agent's `memory.md` from its workspace and
- * injects it into the prompt. The agent is instructed to update memory.md
- * at the end of each run with domain-specific learnings.
+ * Phase 1 (Main Agent): Spawns `claude -p` with the agent's env vars and full
+ * tool access. The system prompt includes read-only memory context — no memory
+ * write instructions. The agent focuses purely on its core task.
+ *
+ * Phase 2 (Memory Sub-Agent): After the main agent exits successfully, spawns
+ * a lightweight Claude CLI invocation (no tools) to update memory.md based on
+ * what the main agent produced. This is best-effort and non-fatal.
+ *
+ * This two-phase approach structurally guarantees the result text is the
+ * agent's deliverable, not a housekeeping remark like "Memory updated...".
  */
 export async function runAgentTask(
   definition: AgentDefinition,
@@ -81,15 +86,16 @@ export async function runAgentTask(
 
   // Read the agent's persistent memory file from its workspace
   const workspaceMemory = readWorkspaceMemory(workspaceDir);
+  const archiveExists = hasWorkspaceArchive(workspaceDir);
 
-  const userMessage = buildUserMessage(definition, { workspaceMemory });
+  const userMessage = buildUserMessage(definition, { workspaceMemory, hasArchive: archiveExists });
 
   // Build the full prompt: soul as system prompt context + user message
   const prompt = userMessage;
 
-  // Append memory system instructions to the soul so the agent knows
-  // how to maintain its memory.md file
-  const systemPrompt = definition.soul + MEMORY_SYSTEM_INSTRUCTIONS;
+  // Use read-only memory context note — no write instructions.
+  // Memory updates are handled by the sub-agent in Phase 2.
+  const systemPrompt = definition.soul + MEMORY_CONTEXT_NOTE;
 
   const args = [
     "-p",
@@ -99,31 +105,20 @@ export async function runAgentTask(
     "--append-system-prompt", systemPrompt,
   ];
 
-  // Merge agent env vars with process env (deny-list dangerous keys)
-  const DENIED_ENV_KEYS = new Set([
-    "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "NODE_OPTIONS",
-    "HOME", "SHELL", "USER", "LOGNAME", "DYLD_INSERT_LIBRARIES",
-  ]);
-  const childEnv: NodeJS.ProcessEnv = { ...process.env };
-  const envVars = definition.config.envVars;
-  if (envVars) {
-    for (const [key, value] of Object.entries(envVars)) {
-      if (!DENIED_ENV_KEYS.has(key.toUpperCase())) {
-        childEnv[key] = value;
-      }
-    }
-  }
-  childEnv.FORCE_COLOR = "0";
+  const childEnv = buildChildEnv(definition.config.envVars);
 
   const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
-  return new Promise<RunResult>((resolve) => {
+  // Phase 1: Run the main agent
+  const result = await new Promise<RunResult>((resolve) => {
     const proc: ChildProcess = spawn(resolveClaudePath(), args, {
       env: childEnv,
       cwd: workspaceDir,
     });
 
+    let agentTimedOut = false;
     const agentTimer = setTimeout(() => {
+      agentTimedOut = true;
       proc.kill("SIGTERM");
     }, AGENT_TIMEOUT_MS);
 
@@ -252,17 +247,12 @@ export async function runAgentTask(
       clearTimeout(agentTimer);
       const durationMs = Date.now() - startTime;
 
-      const isSuccess = code === 0 || code === null;
+      const isSuccess = code === 0;
 
-      // Prefer resultText (from the `result` event — the agent's final
-      // response).  If it looks like a housekeeping remark rather than the
-      // real deliverable, fall back to the last assistant text block which
-      // is more likely to contain the actual output.
-      const HOUSEKEEPING_RE = /^(memory (updated|saved)|updated memory|done\.?|ok\.?)$/i;
-      let finalOutput = resultText;
-      if ((!finalOutput || HOUSEKEEPING_RE.test(finalOutput.trim())) && assistantTextBlocks.length > 0) {
-        finalOutput = assistantTextBlocks[assistantTextBlocks.length - 1];
-      }
+      // resultText comes from the CLI's "result" event — the agent's final deliverable.
+      // Fall back to the last assistant text block only if resultText is empty (e.g. crash).
+      const finalOutput = resultText
+        || (assistantTextBlocks.length > 0 ? assistantTextBlocks[assistantTextBlocks.length - 1] : "");
 
       resolve({
         agentName: definition.config.name,
@@ -273,7 +263,11 @@ export async function runAgentTask(
         tokensUsed: { prompt: promptTokens, completion: completionTokens },
         toolUses,
         durationMs,
-        ...(isSuccess ? {} : { error: stderrOutput || `Claude CLI exited with code ${code}` }),
+        ...(isSuccess ? {} : {
+          error: agentTimedOut
+            ? `Agent timed out after ${AGENT_TIMEOUT_MS / 1000}s`
+            : (stderrOutput || `Claude CLI exited with code ${code}`),
+        }),
       });
     });
 
@@ -292,4 +286,38 @@ export async function runAgentTask(
       });
     });
   });
+
+  // Phase 2: Memory sub-agent (best-effort, non-fatal)
+  if (result.success && result.output) {
+    try {
+      onEvent?.({
+        type: "memory_update",
+        timestamp: Date.now(),
+        data: { status: "started" },
+      });
+
+      await updateMemoryAfterRun({
+        workspaceDir,
+        currentMemory: workspaceMemory,
+        runOutput: result.output,
+        skill: definition.skill,
+        envVars: definition.config.envVars,
+      });
+
+      onEvent?.({
+        type: "memory_update",
+        timestamp: Date.now(),
+        data: { status: "completed" },
+      });
+    } catch (err) {
+      console.warn("[runner] memory sub-agent failed (non-fatal):", err);
+      onEvent?.({
+        type: "memory_update",
+        timestamp: Date.now(),
+        data: { status: "failed", error: String(err) },
+      });
+    }
+  }
+
+  return result;
 }
