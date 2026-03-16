@@ -20,6 +20,10 @@ interface ClaudePanelProps {
   soul: string;
   skill: string;
   agentName: string;
+  schedule?: string;
+  timezone?: string;
+  envVarKeys?: string[];
+  enabled?: boolean;
   onApplySoul: (text: string) => void;
   onApplySkill: (text: string) => void;
 }
@@ -121,6 +125,10 @@ export function ClaudePanel({
   soul,
   skill,
   agentName,
+  schedule,
+  timezone,
+  envVarKeys,
+  enabled,
   onApplySoul,
   onApplySkill,
 }: ClaudePanelProps) {
@@ -159,27 +167,51 @@ export function ClaudePanel({
     const systemPrompt = [
       `You are helping the user write and refine prompts for an autonomous agent called "${agentName}".`,
       "",
-      "The agent has two prompts:",
-      "- **Soul** (system prompt): Defines the agent's personality and behavior.",
-      "- **Skill** (task instructions): Defines what the agent does on each run.",
+      "## How the agent works",
+      "The agent runs via Claude CLI with full tool access (file read/write, bash, web search, etc.).",
+      "Each run, the agent gets a system prompt (soul) and a user message containing the task (skill).",
+      "",
+      "Key capabilities the agent has at runtime:",
+      "- **Persistent workspace**: A dedicated directory that survives across runs. The agent can create files, install packages, cache data, etc.",
+      "- **Persistent memory**: A `memory.md` file in the workspace that the agent reads at the start and updates at the end of each run. Use this for tracking progress, avoiding repeat work, and learning across runs.",
+      "- **Environment variables**: Secrets and API keys injected at runtime (the agent sees the variable names but values are secure).",
+      "- **Telegram notifications**: The agent's output can be sent to a Telegram chat after each run.",
+      "",
+      "## Agent prompts",
+      "- **Soul** (system prompt): Defines the agent's personality, behavior, and constraints.",
+      "- **Skill** (task instructions): Defines what the agent does on each run. Can include a `## Memory` section to tell the agent what to track in memory.md.",
       "",
       "When suggesting a replacement for the soul, wrap it in <soul>...</soul> tags.",
       "When suggesting a replacement for the skill, wrap it in <skill>...</skill> tags.",
       "Only use these tags when providing complete replacements. For discussion/feedback, just respond normally.",
     ].join("\n");
 
+    const contextParts = [
+      "## Current Agent Configuration",
+      "",
+      `**Name**: ${agentName}`,
+      `**Status**: ${enabled !== undefined ? (enabled ? "Active" : "Paused") : "Unknown"}`,
+    ];
+    if (schedule) contextParts.push(`**Schedule**: \`${schedule}\``);
+    if (timezone) contextParts.push(`**Timezone**: ${timezone}`);
+    if (envVarKeys && envVarKeys.length > 0) {
+      contextParts.push(`**Environment Variables**: ${envVarKeys.map(k => `\`${k}\``).join(", ")}`);
+    }
+    contextParts.push("");
+
     const fullPrompt = [
+      ...contextParts,
       "## Current Agent Prompts",
       "",
       "### Soul (System Prompt)",
-      "```",
+      "````",
       soul,
-      "```",
+      "````",
       "",
       "### Skill (Task Instructions)",
-      "```",
+      "````",
       skill,
-      "```",
+      "````",
       "",
       "## Conversation History",
       ...messages.map((m) => `**${m.role}**: ${m.content}`),

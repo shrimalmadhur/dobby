@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { runAgentTask } from "@/lib/runner/agent-runner";
 import { logRun, getRecentOutputs } from "@/lib/runner/run-log";
 import { getAgentTelegramConfig, sendAgentResult } from "@/lib/runner/telegram-sender";
-import type { AgentDefinition } from "@/lib/runner/types";
+import { agentRowToDefinition } from "@/lib/runner/db-config-loader";
 import { startRun, emitRunEvent, endRun } from "@/lib/runner/run-events";
 
 export const maxDuration = 600; // 10 minutes
@@ -47,18 +47,7 @@ export async function POST(
 
     const agent = rows[0];
 
-    const definition: AgentDefinition = {
-      config: {
-        name: agent.name,
-        enabled: agent.enabled,
-        schedule: agent.schedule,
-        timezone: agent.timezone || undefined,
-        envVars: (agent.envVars as Record<string, string>) || {},
-      },
-      soul: agent.soul,
-      skill: agent.skill,
-      agentId: agent.id,
-    };
+    const definition = agentRowToDefinition(agent);
 
     // Get recent outputs for context (topic dedup)
     const recentOutputs = await getRecentOutputs(agent.name, 30, agent.id);

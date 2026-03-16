@@ -288,6 +288,10 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: AgentFormPro
           soul={form.soul}
           skill={form.skill}
           agentName={form.name || "unnamed"}
+          schedule={form.schedule}
+          timezone={form.timezone}
+          envVarKeys={Object.keys(form.envVars).filter(k => k.trim())}
+          enabled={form.enabled}
           onApplySoul={(text) => update("soul", text)}
           onApplySkill={(text) => update("skill", text)}
         />
