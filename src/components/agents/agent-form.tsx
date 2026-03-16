@@ -94,7 +94,8 @@ function EnvVarsEditor({
             value={entry.value}
             onChange={(e) => updateValue(idx, e.target.value)}
             placeholder="value"
-            className={inputClasses}
+            className={`${inputClasses} ${entry.value.includes("****") ? "border-yellow-500/40" : ""}`}
+            title={entry.value.includes("****") ? "This value is masked. Edit to replace with the real value, or leave as-is to keep the stored value." : undefined}
           />
           <button type="button" onClick={() => toggleShow(idx)} className="border border-border p-1.5 text-muted hover:text-foreground hover:border-accent transition-colors">
             {showValues[idx] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}

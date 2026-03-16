@@ -12,6 +12,14 @@ export const maxDuration = 600; // 10 minutes
 // Track in-flight runs to prevent concurrent execution of the same agent
 const runningAgents = new Set<string>();
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ agentId: string }> }
+) {
+  const { agentId } = await params;
+  return NextResponse.json({ running: runningAgents.has(agentId) });
+}
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ agentId: string }> }

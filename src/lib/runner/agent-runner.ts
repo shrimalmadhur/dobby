@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentDefinition, RunResult, ToolUseLog } from "./types";
 import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 
@@ -81,11 +83,18 @@ export async function runAgentTask(
   }
   childEnv.FORCE_COLOR = "0";
 
+  // Create a persistent workspace directory for this agent so it can
+  // install packages, write temp files, etc. across runs.
+  const safeDirName = definition.agentId || definition.config.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const workspaceDir = join(process.cwd(), "data", "workspaces", safeDirName);
+  mkdirSync(workspaceDir, { recursive: true });
+
   const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   return new Promise<RunResult>((resolve) => {
     const proc: ChildProcess = spawn(resolveClaudePath(), args, {
       env: childEnv,
+      cwd: workspaceDir,
     });
 
     const agentTimer = setTimeout(() => {

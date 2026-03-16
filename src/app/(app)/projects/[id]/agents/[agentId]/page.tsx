@@ -526,6 +526,45 @@ export default function AgentDetailPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Check if the agent is already running on mount (survives navigation)
+  useEffect(() => {
+    let cancelled = false;
+    const maxPollAttempts = 250; // ~12.5 min at 3s intervals, exceeds 10-min agent timeout
+    const checkRunning = async () => {
+      try {
+        const res = await fetch(`/api/agents/${params.agentId}/run`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.running && !cancelled) {
+            setRunning(true);
+            let attempts = 0;
+            const poll = async () => {
+              if (cancelled || ++attempts > maxPollAttempts) {
+                if (!cancelled) setRunning(false);
+                return;
+              }
+              try {
+                const r = await fetch(`/api/agents/${params.agentId}/run`);
+                if (r.ok) {
+                  const d = await r.json();
+                  if (!d.running && !cancelled) {
+                    setRunning(false);
+                    fetchData();
+                    return;
+                  }
+                }
+              } catch { /* retry */ }
+              if (!cancelled) setTimeout(poll, 3000);
+            };
+            setTimeout(poll, 3000);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    checkRunning();
+    return () => { cancelled = true; };
+  }, [params.agentId, fetchData]);
+
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
     try {
@@ -588,6 +627,8 @@ export default function AgentDetailPage() {
       // Refresh data to show the new run in history
       await fetchData();
     } catch {
+      // If the fetch was aborted (e.g. user navigated away), that's fine —
+      // the poll-on-mount logic will pick up the running state
       setError("Failed to run agent");
     } finally {
       setRunning(false);

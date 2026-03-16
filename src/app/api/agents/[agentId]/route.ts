@@ -101,7 +101,29 @@ export async function PATCH(
     if (parsed.data.skill !== undefined) updates.skill = parsed.data.skill;
     if (parsed.data.schedule !== undefined) updates.schedule = parsed.data.schedule;
     if (parsed.data.timezone !== undefined) updates.timezone = parsed.data.timezone;
-    if (parsed.data.envVars !== undefined) updates.envVars = parsed.data.envVars;
+    if (parsed.data.envVars !== undefined) {
+      // Preserve original env var values when the submitted value is masked.
+      // The GET endpoint masks values (e.g. "post****uire"), so edits that
+      // don't touch env vars would otherwise overwrite real credentials.
+      const originalEnvVars = (current[0].envVars as Record<string, string>) || {};
+      const merged: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.data.envVars)) {
+        if (k in originalEnvVars) {
+          // Check if the submitted value exactly matches the masked form
+          // the GET endpoint would produce for the original value.
+          const orig = originalEnvVars[k];
+          const expectedMask = orig.length <= 8
+            ? "****"
+            : orig.substring(0, 4) + "****" + orig.substring(orig.length - 4);
+          if (v === expectedMask) {
+            merged[k] = orig;
+            continue;
+          }
+        }
+        merged[k] = v;
+      }
+      updates.envVars = merged;
+    }
     if (parsed.data.enabled !== undefined) updates.enabled = parsed.data.enabled;
 
     const [updated] = await db
