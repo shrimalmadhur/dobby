@@ -5,21 +5,7 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getAgentWorkspaceDir } from "@/lib/runner/agent-runner";
-
-function getDefinitionForAgent(agent: typeof agents.$inferSelect) {
-  return {
-    config: {
-      name: agent.name,
-      enabled: agent.enabled,
-      schedule: agent.schedule,
-      timezone: agent.timezone || undefined,
-      envVars: (agent.envVars as Record<string, string>) || {},
-    },
-    soul: agent.soul,
-    skill: agent.skill,
-    agentId: agent.id,
-  };
-}
+import { agentRowToDefinition } from "@/lib/runner/db-config-loader";
 
 /**
  * GET /api/agents/:agentId/memories - Read an agent's memory file
@@ -40,12 +26,13 @@ export async function GET(
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
-  const definition = getDefinitionForAgent(rows[0]);
+  const definition = agentRowToDefinition(rows[0]);
   const workspaceDir = getAgentWorkspaceDir(definition);
   const memoryPath = join(workspaceDir, "memory.md");
 
   let content = "";
-  if (existsSync(memoryPath)) {
+  const exists = existsSync(memoryPath);
+  if (exists) {
     try {
       content = readFileSync(memoryPath, "utf-8");
     } catch {
@@ -56,9 +43,8 @@ export async function GET(
   return NextResponse.json({
     agentId,
     agentName: rows[0].name,
-    workspacePath: memoryPath,
     content,
-    exists: existsSync(memoryPath),
+    exists,
   });
 }
 
@@ -81,7 +67,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
-  const definition = getDefinitionForAgent(rows[0]);
+  const definition = agentRowToDefinition(rows[0]);
   const workspaceDir = getAgentWorkspaceDir(definition);
   const memoryPath = join(workspaceDir, "memory.md");
 

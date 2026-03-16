@@ -18,6 +18,14 @@ function buildUserMessage(
   parts.push(`## Context`);
   parts.push(`Today's date: ${new Date().toISOString().split("T")[0]}`);
 
+  // Tell the agent about its persistent workspace
+  parts.push("");
+  parts.push(`## Your Workspace`);
+  parts.push("You are running in a persistent workspace directory dedicated to you.");
+  parts.push("This directory survives across runs — files you create, packages you install,");
+  parts.push("and any other state will still be here next time you run.");
+  parts.push("Use this workspace freely for caching data, storing intermediate results, or any other purpose.");
+
   // List available env vars so Claude knows what's available
   const envVars = definition.config.envVars;
   if (envVars && Object.keys(envVars).length > 0) {

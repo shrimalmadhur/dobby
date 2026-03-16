@@ -3,6 +3,25 @@ import { agents, projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type { AgentDefinition } from "./types";
 
+/**
+ * Convert a DB agent row to an AgentDefinition.
+ * Shared across all callsites that need to construct definitions from DB rows.
+ */
+export function agentRowToDefinition(row: typeof agents.$inferSelect): AgentDefinition {
+  return {
+    config: {
+      name: row.name,
+      enabled: row.enabled,
+      schedule: row.schedule,
+      timezone: row.timezone || undefined,
+      envVars: (row.envVars as Record<string, string>) || {},
+    },
+    soul: row.soul,
+    skill: row.skill,
+    agentId: row.id,
+  };
+}
+
 interface LoadOptions {
   includeDisabled?: boolean;
   projectId?: string;
@@ -45,19 +64,7 @@ export async function loadAgentDefinitionsFromDB(
 
   for (const row of rows) {
     if (!row.enabled && !includeDisabled) continue;
-
-    definitions.push({
-      config: {
-        name: row.name,
-        enabled: row.enabled,
-        schedule: row.schedule,
-        timezone: row.timezone || undefined,
-        envVars: (row.envVars as Record<string, string>) || {},
-      },
-      soul: row.soul,
-      skill: row.skill,
-      agentId: row.id,
-    });
+    definitions.push(agentRowToDefinition(row));
   }
 
   return definitions;
