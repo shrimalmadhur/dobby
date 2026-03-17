@@ -39,6 +39,22 @@ else
     green "  Bun $(bun --version) installed"
 fi
 
+# ── 2b. Node.js (needed by Next.js build workers) ──
+if command -v node &>/dev/null; then
+    NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+    if [ "$NODE_VERSION" -lt 20 ]; then
+        yellow "  Node.js $(node -v) is too old (need >= 20), upgrading..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+        sudo apt-get install -y -qq nodejs > /dev/null
+    fi
+    green "  Node.js $(node -v) already installed"
+else
+    echo "  Installing Node.js 22..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+    sudo apt-get install -y -qq nodejs > /dev/null
+    green "  Node.js $(node -v) installed"
+fi
+
 # ── 3. Pull latest (if upgrade) ────────────────
 if $UPGRADE; then
     echo ""

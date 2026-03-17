@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure Bun is on PATH
+# Ensure common binary paths are on PATH
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:$PATH"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,7 +9,6 @@ SERVICE_NAME="jarvis"
 OS="$(uname -s)"
 ACTUAL_USER="$(whoami)"
 ACTUAL_GROUP="$(id -gn "$ACTUAL_USER")"
-NODE_BIN_DIR="$(dirname "$(command -v node)")"
 
 # macOS launchd identifiers
 PLIST_LABEL="com.jarvis.agent"
@@ -18,14 +17,100 @@ INSTALL_DIR="/usr/local/lib/jarvis"
 
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 
-# --- Check prerequisites ---
-for cmd in rsync sqlite3; do
-    if ! command -v "$cmd" &>/dev/null; then
-        red "Error: '$cmd' is required but not installed"
+# --- Install missing system dependencies ---
+echo "Checking system dependencies..."
+
+install_system_packages() {
+    local missing=("$@")
+    if [ ${#missing[@]} -eq 0 ]; then return 0; fi
+    echo "  Installing missing packages: ${missing[*]}..."
+    if [ "$OS" = "Darwin" ]; then
+        if ! command -v brew &>/dev/null; then
+            echo "  Installing Homebrew..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+        fi
+        brew install "${missing[@]}"
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq "${missing[@]}" > /dev/null
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y -q "${missing[@]}" > /dev/null
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -Sy --noconfirm --needed "${missing[@]}" > /dev/null
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache "${missing[@]}" > /dev/null
+    else
+        red "Error: Could not install ${missing[*]} — no supported package manager found"
         exit 1
     fi
+}
+
+MISSING_PKGS=()
+for cmd in rsync sqlite3 curl git unzip; do
+    if ! command -v "$cmd" &>/dev/null; then
+        MISSING_PKGS+=("$cmd")
+    fi
 done
+if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
+    install_system_packages "${MISSING_PKGS[@]}"
+fi
+green "  System packages OK"
+
+# --- Check / install Bun ---
+if ! command -v bun &>/dev/null; then
+    echo "  Installing Bun..."
+    curl -fsSL https://bun.sh/install | bash
+    export PATH="$HOME/.bun/bin:$PATH"
+    hash -r 2>/dev/null || true
+fi
+if ! command -v bun &>/dev/null; then
+    red "Error: Bun installation failed"
+    exit 1
+fi
+green "  bun $(bun --version)"
+
+# --- Check / install Node.js ---
+if ! command -v node &>/dev/null; then
+    echo "  Installing Node.js..."
+    if [ "$OS" = "Darwin" ]; then
+        if ! command -v brew &>/dev/null; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+        fi
+        brew install node
+    elif command -v apt-get &>/dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+        sudo apt-get install -y -qq nodejs > /dev/null
+    elif command -v dnf &>/dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+        sudo dnf install -y -q nodejs > /dev/null
+    else
+        red "Error: Node.js is required but could not be auto-installed"
+        exit 1
+    fi
+    hash -r 2>/dev/null || true
+fi
+
+NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+if [ "$NODE_VERSION" -lt 20 ]; then
+    yellow "  Node.js $(node -v) is too old (need >= 20), upgrading..."
+    if [ "$OS" = "Darwin" ]; then
+        brew upgrade node
+    elif command -v apt-get &>/dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+        sudo apt-get install -y -qq nodejs > /dev/null
+    elif command -v dnf &>/dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+        sudo dnf install -y -q nodejs > /dev/null
+    fi
+    hash -r 2>/dev/null || true
+fi
+
+NODE_BIN_DIR="$(dirname "$(command -v node)")"
+green "  node $(node -v)"
 
 # --- Pull latest code ---
 echo "Pulling latest code..."
