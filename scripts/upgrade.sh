@@ -164,4 +164,4 @@ fi
 # --- Re-sync agent cron jobs ---
 echo ""
 echo "Syncing agent cron jobs..."
-bash "$INSTALL_DIR/scripts/install-cron.sh"
+DATABASE_PATH="$INSTALL_DIR/data/jarvis.db" bash "$INSTALL_DIR/scripts/install-cron.sh" --run-dir "$INSTALL_DIR"

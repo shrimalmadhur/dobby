@@ -56,8 +56,8 @@ describe("install-cron.sh --dry-run", () => {
       { cwd: PROJECT_DIR, encoding: "utf-8" }
     );
 
-    // Should contain the agent ID with --id flag
-    expect(output).toContain(`--id ${AGENT_ID}`);
+    // Should contain the agent ID with --id flag (single-quoted)
+    expect(output).toContain(`--id '${AGENT_ID}'`);
     // Should NOT contain the agent name as a CLI argument to run-agents.ts
     expect(output).not.toContain(`run-agents.ts ${AGENT_NAME}`);
     expect(output).not.toContain(`run-agents.ts my`);
@@ -101,5 +101,40 @@ describe("install-cron.sh --dry-run", () => {
 
     expect(output).toContain("# --- Jarvis Agents (auto-generated) ---");
     expect(output).toContain("# --- End Jarvis Agents ---");
+  });
+
+  test("--run-dir overrides the cd target in cron entries", () => {
+    const customDir = "/usr/local/lib/jarvis";
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run --run-dir "${customDir}"`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    // Path should be single-quoted in the cron entry
+    expect(output).toContain(`cd '${customDir}' &&`);
+    // Should NOT contain the script's own PROJECT_DIR (the repo root) in the cd command
+    const repoRoot = join(SCRIPT_PATH, "..", "..");
+    expect(output).not.toContain(`cd '${repoRoot}'`);
+  });
+
+  test("--run-dir does not affect DB query (only cd target)", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run --run-dir /tmp/unrelated`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    // DB query still works — agent found despite --run-dir pointing elsewhere
+    expect(output).toContain(`--id '${AGENT_ID}'`);
+    // cd target uses the custom dir
+    expect(output).toContain("cd '/tmp/unrelated' &&");
+  });
+
+  test("--run-dir without a value exits with error", () => {
+    expect(() =>
+      execSync(
+        `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --run-dir 2>&1`,
+        { cwd: PROJECT_DIR, encoding: "utf-8" }
+      )
+    ).toThrow();
   });
 });
