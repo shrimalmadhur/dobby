@@ -331,6 +331,9 @@ else
     # --- Linux: systemd ---
     echo "Installing systemd service..."
 
+    mkdir -p "$LOG_DIR"
+    chown "$ACTUAL_USER:$ACTUAL_GROUP" "$LOG_DIR"
+
     sed -e "s|__USER__|$ACTUAL_USER|g" \
         -e "s|__GROUP__|$ACTUAL_GROUP|g" \
         -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
