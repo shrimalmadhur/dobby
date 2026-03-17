@@ -77,6 +77,17 @@ else
     sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 fi
 
+# --- Ensure log directory exists ---
+if [ ! -d "$LOG_DIR" ]; then
+    echo "Creating log directory $LOG_DIR..."
+    if [ "$OS" = "Darwin" ]; then
+        mkdir -p "$LOG_DIR"
+    else
+        sudo mkdir -p "$LOG_DIR"
+        sudo chown "$ACTUAL_USER:$ACTUAL_GROUP" "$LOG_DIR"
+    fi
+fi
+
 # --- Deploy to install directory ---
 echo ""
 echo "Deploying to $INSTALL_DIR..."

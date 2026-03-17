@@ -34,8 +34,11 @@ done
 RUN_DIR="${RUN_DIR:-$PROJECT_DIR}"
 
 # Ensure log directory exists
-if ! $DRY_RUN; then
-  mkdir -p "$LOG_DIR" 2>/dev/null || true
+if ! $DRY_RUN && [ ! -d "$LOG_DIR" ]; then
+  mkdir -p "$LOG_DIR" 2>/dev/null || {
+    echo "Warning: Could not create $LOG_DIR — cron output will be lost." >&2
+    echo "Fix with: sudo mkdir -p '$LOG_DIR' && sudo chown \"\$(whoami)\" '$LOG_DIR'" >&2
+  }
 fi
 
 # Query enabled agents from DB using bun:sqlite (built-in, no native deps).
