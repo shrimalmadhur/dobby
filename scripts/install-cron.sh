@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate and install crontab entries for Jarvis agents (from DB).
-# Usage: bash scripts/install-cron.sh [--dry-run]
+# Usage: bash scripts/install-cron.sh [--dry-run] [--run-dir DIR]
 
 set -euo pipefail
 
@@ -14,10 +14,24 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="/etc/jarvis/env"
 LOG_DIR="/var/log/jarvis"
 DRY_RUN=false
+RUN_DIR=""
 
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
-fi
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --run-dir)
+      if [[ $# -lt 2 ]]; then echo "Error: --run-dir requires a value" >&2; exit 1; fi
+      RUN_DIR="$2"; shift 2 ;;
+    *) echo "Warning: unknown argument '$1'" >&2; shift ;;
+  esac
+done
+
+# RUN_DIR is the directory used in cron `cd` commands.
+# Defaults to PROJECT_DIR (derived from script location).
+# Callers like install.sh / upgrade.sh should pass --run-dir to point at the
+# production install directory (/usr/local/lib/jarvis).
+RUN_DIR="${RUN_DIR:-$PROJECT_DIR}"
 
 # Ensure log directory exists
 if ! $DRY_RUN; then
@@ -36,6 +50,8 @@ AGENTS_TSV=$(cd "$PROJECT_DIR" && bun -e "
   const db = new Database(dbPath, { readonly: true });
   const rows = db.prepare('SELECT id, name, schedule FROM agents WHERE enabled = 1 AND schedule IS NOT NULL').all();
   for (const r of rows) {
+    // Validate id is a UUID (hex + dashes only) to prevent crontab injection
+    if (!/^[0-9a-f\-]+$/i.test(r.id)) continue;
     // Sanitize name and schedule to prevent TSV/crontab injection
     const safeName = r.name.replace(/[\t\n\r]/g, ' ');
     const safeSchedule = r.schedule.replace(/[\t\n\r]/g, ' ');
@@ -69,11 +85,11 @@ while IFS=$'\t' read -r agent_id agent_name schedule; do
   # Source env file before running, so API keys and Telegram tokens are available
   ENV_SOURCE=""
   if [[ -f "$ENV_FILE" ]]; then
-    ENV_SOURCE="set -a && source $ENV_FILE && set +a && "
+    ENV_SOURCE="set -a && source '$ENV_FILE' && set +a && "
   fi
 
   # Use --id instead of name to avoid breakage when agents are renamed
-  entry="$schedule ${ENV_SOURCE}cd $PROJECT_DIR && bun run --tsconfig tsconfig.runner.json scripts/run-agents.ts --id $agent_id >> $LOG_DIR/agents.log 2>&1"
+  entry="$schedule ${ENV_SOURCE}cd '$RUN_DIR' && bun run --tsconfig tsconfig.runner.json scripts/run-agents.ts --id '$agent_id' >> '$LOG_DIR/agents.log' 2>&1"
   # Use real newlines (not \n literals) to avoid echo -e interpreting backslash sequences in names
   CRON_ENTRIES="${CRON_ENTRIES}
 # Agent: $agent_name ($agent_id)

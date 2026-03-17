@@ -397,4 +397,4 @@ fi
 # --- Install agent cron jobs ---
 echo ""
 echo "Installing agent cron jobs..."
-sudo -u "$ACTUAL_USER" bash "$REPO_DIR/scripts/install-cron.sh"
+sudo -u "$ACTUAL_USER" env "DATABASE_PATH=$INSTALL_DIR/data/jarvis.db" bash "$REPO_DIR/scripts/install-cron.sh" --run-dir "$INSTALL_DIR"

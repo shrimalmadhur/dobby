@@ -189,7 +189,7 @@ fi
 # ── 9. Cron jobs for agents ───────────────────
 echo ""
 echo "Step $($UPGRADE && echo 9 || echo 8): Installing cron jobs..."
-bash "$REPO_DIR/scripts/install-cron.sh"
+DATABASE_PATH="$INSTALL_DIR/data/jarvis.db" bash "$REPO_DIR/scripts/install-cron.sh" --run-dir "$INSTALL_DIR"
 
 # ── Done ────────────────────────────────────────
 echo ""
