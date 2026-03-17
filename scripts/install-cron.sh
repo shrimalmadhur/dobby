@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+# Ensure bun is on PATH (may be missing when called from Next.js server process)
+for p in "$HOME/.bun/bin" /opt/homebrew/bin /usr/local/bin; do
+  [[ -d "$p" ]] && export PATH="$p:$PATH"
+done
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="/etc/jarvis/env"
@@ -19,18 +24,33 @@ if ! $DRY_RUN; then
   mkdir -p "$LOG_DIR" 2>/dev/null || true
 fi
 
-# Query enabled agents from DB using bun
-AGENTS_JSON=$(cd "$PROJECT_DIR" && bun -e "
-  const Database = require('better-sqlite3');
+# Query enabled agents from DB using bun:sqlite (built-in, no native deps).
+# Note: the Next.js app uses better-sqlite3 (for Node.js compat), but this
+# script runs via bun so bun:sqlite is the right choice here.
+# Output is TSV: id\tname\tschedule (one line per agent, no python3 needed).
+BUN_STDERR_FILE=$(mktemp)
+AGENTS_TSV=$(cd "$PROJECT_DIR" && bun -e "
+  const { Database } = require('bun:sqlite');
   const path = require('path');
   const dbPath = process.env.DATABASE_PATH || path.join('data', 'jarvis.db');
   const db = new Database(dbPath, { readonly: true });
-  const rows = db.prepare('SELECT name, schedule FROM agents WHERE enabled = 1 AND schedule IS NOT NULL').all();
-  console.log(JSON.stringify(rows));
+  const rows = db.prepare('SELECT id, name, schedule FROM agents WHERE enabled = 1 AND schedule IS NOT NULL').all();
+  for (const r of rows) {
+    // Sanitize name and schedule to prevent TSV/crontab injection
+    const safeName = r.name.replace(/[\t\n\r]/g, ' ');
+    const safeSchedule = r.schedule.replace(/[\t\n\r]/g, ' ');
+    console.log(r.id + '\t' + safeName + '\t' + safeSchedule);
+  }
   db.close();
-" 2>/dev/null)
+" 2>"$BUN_STDERR_FILE") || {
+  echo "Error: Failed to query agents from database" >&2
+  cat "$BUN_STDERR_FILE" >&2
+  rm -f "$BUN_STDERR_FILE"
+  exit 1
+}
+rm -f "$BUN_STDERR_FILE"
 
-if [[ -z "$AGENTS_JSON" || "$AGENTS_JSON" == "[]" ]]; then
+if [[ -z "$AGENTS_TSV" ]]; then
   echo "No enabled agents with schedules found in database."
   exit 0
 fi
@@ -40,13 +60,7 @@ CRON_ENTRIES=""
 MARKER_START="# --- Jarvis Agents (auto-generated) ---"
 MARKER_END="# --- End Jarvis Agents ---"
 
-# Parse JSON array of {name, schedule} objects
-COUNT=$(echo "$AGENTS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-
-for i in $(seq 0 $((COUNT - 1))); do
-  agent_name=$(echo "$AGENTS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['name'])")
-  schedule=$(echo "$AGENTS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['schedule'])")
-
+while IFS=$'\t' read -r agent_id agent_name schedule; do
   if [[ -z "$schedule" ]]; then
     echo "Skipping $agent_name (no schedule)"
     continue
@@ -58,22 +72,28 @@ for i in $(seq 0 $((COUNT - 1))); do
     ENV_SOURCE="set -a && source $ENV_FILE && set +a && "
   fi
 
-  entry="$schedule ${ENV_SOURCE}cd $PROJECT_DIR && bun run --tsconfig tsconfig.runner.json scripts/run-agents.ts $agent_name >> $LOG_DIR/agents.log 2>&1"
-  CRON_ENTRIES="$CRON_ENTRIES\n# Agent: $agent_name\n$entry"
-  echo "Added: $agent_name [$schedule]"
-done
+  # Use --id instead of name to avoid breakage when agents are renamed
+  entry="$schedule ${ENV_SOURCE}cd $PROJECT_DIR && bun run --tsconfig tsconfig.runner.json scripts/run-agents.ts --id $agent_id >> $LOG_DIR/agents.log 2>&1"
+  # Use real newlines (not \n literals) to avoid echo -e interpreting backslash sequences in names
+  CRON_ENTRIES="${CRON_ENTRIES}
+# Agent: $agent_name ($agent_id)
+$entry"
+  echo "Added: $agent_name [$schedule] (id: $agent_id)"
+done <<< "$AGENTS_TSV"
 
 if [[ -z "$CRON_ENTRIES" ]]; then
   echo "No enabled agents with schedules found."
   exit 0
 fi
 
-BLOCK="$MARKER_START$CRON_ENTRIES\n$MARKER_END"
+BLOCK="$MARKER_START
+$CRON_ENTRIES
+$MARKER_END"
 
 if $DRY_RUN; then
   echo ""
   echo "=== Crontab entries (dry run) ==="
-  echo -e "$BLOCK"
+  printf '%s\n' "$BLOCK"
   exit 0
 fi
 
@@ -81,7 +101,7 @@ fi
 EXISTING=$(crontab -l 2>/dev/null || true)
 CLEANED=$(echo "$EXISTING" | sed "/$MARKER_START/,/$MARKER_END/d")
 NEW_CRONTAB="$CLEANED
-$(echo -e "$BLOCK")"
+$BLOCK"
 
 echo "$NEW_CRONTAB" | crontab -
 echo ""

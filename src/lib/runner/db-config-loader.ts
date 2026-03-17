@@ -22,6 +22,23 @@ export function agentRowToDefinition(row: typeof agents.$inferSelect): AgentDefi
   };
 }
 
+/**
+ * Load a single agent definition by its database ID.
+ * Returns null if not found or disabled.
+ */
+export async function loadAgentDefinitionById(
+  agentId: string
+): Promise<AgentDefinition | null> {
+  const rows = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+
+  if (rows.length === 0 || !rows[0].enabled) return null;
+  return agentRowToDefinition(rows[0]);
+}
+
 interface LoadOptions {
   includeDisabled?: boolean;
   projectId?: string;

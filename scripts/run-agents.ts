@@ -9,10 +9,51 @@ if (fs.existsSync(".env.local")) {
 } else if (fs.existsSync(".env")) {
   dotenv.config({ path: ".env" });
 }
-import { loadAgentDefinitionsFromDB } from "../src/lib/runner/db-config-loader";
+import { loadAgentDefinitionsFromDB, loadAgentDefinitionById } from "../src/lib/runner/db-config-loader";
 import { runAgentTask } from "../src/lib/runner/agent-runner";
 import { sendAgentResult, getAgentTelegramConfig } from "../src/lib/runner/telegram-sender";
 import { logRun } from "../src/lib/runner/run-log";
+
+async function runSingleAgent(def: Awaited<ReturnType<typeof loadAgentDefinitionsFromDB>>[number]) {
+  console.log(`\n--- Running agent: ${def.config.name} ---`);
+
+  const result = await runAgentTask(def);
+  console.log(`Status: ${result.success ? "SUCCESS" : "FAILED"}`);
+  console.log(
+    `Model: ${result.model} | Tokens: ${result.tokensUsed.prompt + result.tokensUsed.completion} | Time: ${(result.durationMs / 1000).toFixed(1)}s`
+  );
+
+  if (result.error) {
+    console.error(`Error: ${result.error}`);
+  }
+
+  if (result.output) {
+    console.log(`\nOutput:\n${result.output}\n`);
+  }
+
+  // Log run to DB
+  try {
+    await logRun(result);
+  } catch (err) {
+    console.error("Failed to log run:", err);
+  }
+
+  // Send to Telegram if successful
+  if (result.success) {
+    const telegramConfig = await getAgentTelegramConfig(def.config.name, def.agentId);
+
+    if (telegramConfig) {
+      try {
+        await sendAgentResult(telegramConfig, def.config.name, result);
+        console.log("Sent to Telegram.");
+      } catch (err) {
+        console.error("Failed to send to Telegram:", err);
+      }
+    } else {
+      console.log("No Telegram config found, skipping notification.");
+    }
+  }
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,6 +64,25 @@ async function main() {
   if (projectIdx !== -1 && args[projectIdx + 1]) {
     projectName = args[projectIdx + 1];
     args.splice(projectIdx, 2);
+  }
+
+  // Parse --id flag (run a single agent by database ID)
+  let agentId: string | undefined;
+  const idIdx = args.indexOf("--id");
+  if (idIdx !== -1 && args[idIdx + 1]) {
+    agentId = args[idIdx + 1];
+    args.splice(idIdx, 2);
+  }
+
+  // If --id is provided, load that single agent directly
+  if (agentId) {
+    const def = await loadAgentDefinitionById(agentId);
+    if (!def) {
+      console.error(`Agent with id "${agentId}" not found or disabled.`);
+      process.exit(1);
+    }
+    await runSingleAgent(def);
+    return;
   }
 
   // Load agents from DB
@@ -41,13 +101,13 @@ async function main() {
       const schedule = def.config.schedule;
       const envCount = Object.keys(def.config.envVars || {}).length;
       console.log(
-        `  ${def.config.name} [${schedule}] ${envCount} env vars`
+        `  ${def.config.name} [${schedule}] (id: ${def.agentId}) ${envCount} env vars`
       );
     }
     return;
   }
 
-  // Filter to specific agent if name provided
+  // Filter to specific agent if name provided (legacy support)
   const targetAgent = args[0];
   const toRun = targetAgent
     ? definitions.filter((d) => d.config.name === targetAgent)
@@ -67,46 +127,7 @@ async function main() {
 
   // Run each agent
   for (const def of toRun) {
-    console.log(`\n--- Running agent: ${def.config.name} ---`);
-
-    // Memory-based dedup is handled inside runAgentTask — it reads the
-    // agent's workspace memory.md file and injects it into the prompt.
-    const result = await runAgentTask(def);
-    console.log(`Status: ${result.success ? "SUCCESS" : "FAILED"}`);
-    console.log(
-      `Model: ${result.model} | Tokens: ${result.tokensUsed.prompt + result.tokensUsed.completion} | Time: ${(result.durationMs / 1000).toFixed(1)}s`
-    );
-
-    if (result.error) {
-      console.error(`Error: ${result.error}`);
-    }
-
-    if (result.output) {
-      console.log(`\nOutput:\n${result.output}\n`);
-    }
-
-    // Log run to DB
-    try {
-      await logRun(result);
-    } catch (err) {
-      console.error("Failed to log run:", err);
-    }
-
-    // Send to Telegram if successful
-    if (result.success) {
-      const telegramConfig = await getAgentTelegramConfig(def.config.name, def.agentId);
-
-      if (telegramConfig) {
-        try {
-          await sendAgentResult(telegramConfig, def.config.name, result);
-          console.log("Sent to Telegram.");
-        } catch (err) {
-          console.error("Failed to send to Telegram:", err);
-        }
-      } else {
-        console.log("No Telegram config found, skipping notification.");
-      }
-    }
+    await runSingleAgent(def);
   }
 }
 

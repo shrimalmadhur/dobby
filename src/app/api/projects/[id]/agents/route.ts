@@ -4,6 +4,7 @@ import { agents, projects, agentRuns } from "@/lib/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { createAgentSchema } from "@/lib/validations/agent";
 import { cronToHuman } from "@/lib/utils/cron";
+import { syncCrontab } from "@/lib/cron/sync";
 
 export async function GET(
   _request: Request,
@@ -130,6 +131,8 @@ export async function POST(
         enabled: parsed.data.enabled ?? true,
       })
       .returning();
+
+    syncCrontab();
 
     return NextResponse.json(agent, { status: 201 });
   } catch (error) {
