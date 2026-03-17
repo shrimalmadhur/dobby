@@ -30,7 +30,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
               variant === "ghost",
             "bg-red/10 text-red hover:bg-red/20":
               variant === "destructive",
-            "bg-accent text-background font-semibold hover:bg-accent-dim":
+            "bg-accent text-accent-foreground font-semibold hover:bg-accent-dim":
               variant === "accent",
           },
           {

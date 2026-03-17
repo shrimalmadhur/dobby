@@ -145,7 +145,7 @@ export default function ProjectsPage() {
             </div>
             <button
               onClick={() => setShowCreate(!showCreate)}
-              className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/15 hover:border-accent hover:shadow-[0_0_12px_rgba(232,164,74,0.15)]"
+              className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/15 hover:border-accent hover:shadow-[0_0_12px_rgba(124,58,237,0.15)]"
             >
               <Plus className="h-3.5 w-3.5" />
               init new

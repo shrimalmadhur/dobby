@@ -306,7 +306,7 @@ export default function ProjectDetailPage() {
           </div>
           <Link
             href={`/projects/${params.id}/agents/new`}
-            className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[12px] font-mono font-bold text-accent uppercase tracking-wider hover:bg-accent/15 hover:border-accent hover:shadow-[0_0_12px_rgba(232,164,74,0.15)] transition-all"
+            className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[12px] font-mono font-bold text-accent uppercase tracking-wider hover:bg-accent/15 hover:border-accent hover:shadow-[0_0_12px_rgba(124,58,237,0.15)] transition-all"
           >
             <Plus className="h-3.5 w-3.5" />
             spawn agent
