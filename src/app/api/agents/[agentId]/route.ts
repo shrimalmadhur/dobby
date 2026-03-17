@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { agents, agentRuns } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { updateAgentSchema } from "@/lib/validations/agent";
+import { syncCrontab } from "@/lib/cron/sync";
 
 export async function GET(
   _request: Request,
@@ -140,6 +141,15 @@ export async function PATCH(
         .where(eq(agentRuns.agentId, agentId));
     }
 
+    // Re-sync crontab if schedule, name, or enabled state changed
+    if (
+      parsed.data.schedule !== undefined ||
+      parsed.data.name !== undefined ||
+      parsed.data.enabled !== undefined
+    ) {
+      syncCrontab();
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating agent:", error);
@@ -162,6 +172,8 @@ export async function DELETE(
     if (deleted.length === 0) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
+
+    syncCrontab();
 
     return NextResponse.json({ success: true });
   } catch (error) {

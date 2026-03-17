@@ -1,0 +1,105 @@
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { Database } from "bun:sqlite";
+import { execSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
+const PROJECT_DIR = join(import.meta.dir, ".tmp-cron-test");
+const DB_PATH = join(PROJECT_DIR, "data", "jarvis.db");
+const SCRIPT_PATH = join(import.meta.dir, "..", "install-cron.sh");
+
+const AGENT_ID = "11111111-2222-3333-4444-555555555555";
+const AGENT_NAME = "my cool agent";
+const AGENT_SCHEDULE = "30 6 * * 1-5";
+
+beforeAll(() => {
+  // Create a temp project dir with a test DB
+  mkdirSync(join(PROJECT_DIR, "data"), { recursive: true });
+
+  const db = new Database(DB_PATH);
+  db.exec(`
+    CREATE TABLE agents (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL DEFAULT 'proj-1',
+      name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      soul TEXT NOT NULL DEFAULT '',
+      skill TEXT NOT NULL DEFAULT '',
+      schedule TEXT,
+      timezone TEXT,
+      env_vars TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.prepare(
+    `INSERT INTO agents (id, name, enabled, schedule) VALUES (?, ?, 1, ?)`
+  ).run(AGENT_ID, AGENT_NAME, AGENT_SCHEDULE);
+
+  // Also insert a disabled agent — should NOT appear
+  db.prepare(
+    `INSERT INTO agents (id, name, enabled, schedule) VALUES (?, ?, 0, ?)`
+  ).run("disabled-id", "disabled-agent", "0 0 * * *");
+
+  db.close();
+});
+
+afterAll(() => {
+  rmSync(PROJECT_DIR, { recursive: true, force: true });
+});
+
+describe("install-cron.sh --dry-run", () => {
+  test("generates cron entry with --id flag instead of agent name", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    // Should contain the agent ID with --id flag
+    expect(output).toContain(`--id ${AGENT_ID}`);
+    // Should NOT contain the agent name as a CLI argument to run-agents.ts
+    expect(output).not.toContain(`run-agents.ts ${AGENT_NAME}`);
+    expect(output).not.toContain(`run-agents.ts my`);
+  });
+
+  test("includes agent name in comment for readability", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    expect(output).toContain(`# Agent: ${AGENT_NAME}`);
+    expect(output).toContain(`(${AGENT_ID})`);
+  });
+
+  test("uses the correct cron schedule", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    // The cron entry line should start with the schedule
+    expect(output).toContain(AGENT_SCHEDULE);
+  });
+
+  test("excludes disabled agents", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    expect(output).not.toContain("disabled-agent");
+    expect(output).not.toContain("disabled-id");
+  });
+
+  test("includes Jarvis markers for crontab block management", () => {
+    const output = execSync(
+      `DATABASE_PATH="${DB_PATH}" bash "${SCRIPT_PATH}" --dry-run`,
+      { cwd: PROJECT_DIR, encoding: "utf-8" }
+    );
+
+    expect(output).toContain("# --- Jarvis Agents (auto-generated) ---");
+    expect(output).toContain("# --- End Jarvis Agents ---");
+  });
+});

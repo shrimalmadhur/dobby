@@ -160,3 +160,8 @@ else
         exit 1
     fi
 fi
+
+# --- Re-sync agent cron jobs ---
+echo ""
+echo "Syncing agent cron jobs..."
+bash "$INSTALL_DIR/scripts/install-cron.sh"
