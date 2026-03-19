@@ -174,51 +174,21 @@ echo "Stopping $SERVICE_NAME..."
 if [ "$OS" = "Darwin" ]; then
     ACTUAL_UID="$(id -u)"
     launchctl bootout gui/"$ACTUAL_UID"/"$PLIST_LABEL" 2>/dev/null || true
-    # Also stop old jarvis service if still running
-    launchctl bootout gui/"$ACTUAL_UID"/com.jarvis.agent 2>/dev/null || true
     sleep 1
 else
     sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-    # Also stop old jarvis service if still running
-    sudo systemctl stop jarvis 2>/dev/null || true
-    sudo systemctl disable jarvis 2>/dev/null || true
 fi
 # Kill anything still holding port 7749 (e.g. orphaned old process)
 sudo kill $(sudo lsof -t -i:7749) 2>/dev/null || true
 
-# --- Ensure log directory exists (migrate old one if needed) ---
-OLD_LOG_DIR="/var/log/jarvis"
-if [ -d "$OLD_LOG_DIR" ] && [ ! -d "$LOG_DIR" ]; then
-    echo "Migrating logs from /var/log/jarvis to /var/log/dobby..."
-    sudo mv "$OLD_LOG_DIR" "$LOG_DIR"
-    green "  Logs migrated"
-elif [ ! -d "$LOG_DIR" ]; then
+# --- Ensure log directory exists ---
+if [ ! -d "$LOG_DIR" ]; then
     echo "Creating log directory $LOG_DIR..."
     if [ "$OS" = "Darwin" ]; then
         mkdir -p "$LOG_DIR"
     else
         sudo mkdir -p "$LOG_DIR"
         sudo chown "$ACTUAL_USER:$ACTUAL_GROUP" "$LOG_DIR"
-    fi
-fi
-
-# --- Migrate from old jarvis installation if needed ---
-OLD_INSTALL_DIR="/usr/local/lib/jarvis"
-if [ -d "$OLD_INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR" ]; then
-    echo ""
-    echo "Migrating from jarvis to dobby..."
-    sudo mv "$OLD_INSTALL_DIR" "$INSTALL_DIR"
-    if [ -f "$INSTALL_DIR/data/jarvis.db" ]; then
-        mv "$INSTALL_DIR/data/jarvis.db" "$INSTALL_DIR/data/dobby.db"
-        [ -f "$INSTALL_DIR/data/jarvis.db-wal" ] && mv "$INSTALL_DIR/data/jarvis.db-wal" "$INSTALL_DIR/data/dobby.db-wal"
-        [ -f "$INSTALL_DIR/data/jarvis.db-shm" ] && mv "$INSTALL_DIR/data/jarvis.db-shm" "$INSTALL_DIR/data/dobby.db-shm"
-        green "  Database migrated to dobby.db"
-    fi
-    # Disable old jarvis service
-    if [ "$OS" != "Darwin" ] && [ -f "/etc/systemd/system/jarvis.service" ]; then
-        sudo systemctl disable jarvis 2>/dev/null || true
-        sudo rm -f "/etc/systemd/system/jarvis.service"
-        sudo systemctl daemon-reload
     fi
 fi
 
@@ -309,25 +279,6 @@ else
         sudo systemctl enable "$SERVICE_NAME"
         green "  Service installed"
     fi
-fi
-
-# --- Migrate env directory if old one exists ---
-OLD_ENV_DIR="/etc/jarvis"
-if [ -d "$OLD_ENV_DIR" ] && [ ! -d "/etc/dobby" ]; then
-    echo "Migrating config from /etc/jarvis to /etc/dobby..."
-    sudo mv "$OLD_ENV_DIR" "/etc/dobby"
-    if [ -f "/etc/dobby/env" ]; then
-        if [ "$OS" = "Darwin" ]; then
-            sudo sed -i '' 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
-            sudo sed -i '' 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
-            sudo sed -i '' 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
-        else
-            sudo sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
-            sudo sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
-            sudo sed -i 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
-        fi
-    fi
-    green "  Config migrated to /etc/dobby"
 fi
 
 # --- Restart service (OS-specific) ---

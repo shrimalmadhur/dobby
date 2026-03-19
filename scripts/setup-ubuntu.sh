@@ -141,40 +141,6 @@ NODE_BIN_DIR="$(dirname "$(command -v node)")"
 
 # Stop existing service before deploy (if running)
 sudo systemctl stop dobby 2>/dev/null || true
-# Also stop old jarvis service if migrating
-sudo systemctl stop jarvis 2>/dev/null || true
-
-# Migrate from old jarvis installation if needed
-OLD_INSTALL_DIR="/usr/local/lib/jarvis"
-if [ -d "$OLD_INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR" ]; then
-    echo "Migrating from jarvis to dobby..."
-    sudo mv "$OLD_INSTALL_DIR" "$INSTALL_DIR"
-    if [ -f "$INSTALL_DIR/data/jarvis.db" ]; then
-        sudo mv "$INSTALL_DIR/data/jarvis.db" "$INSTALL_DIR/data/dobby.db"
-        [ -f "$INSTALL_DIR/data/jarvis.db-wal" ] && sudo mv "$INSTALL_DIR/data/jarvis.db-wal" "$INSTALL_DIR/data/dobby.db-wal"
-        [ -f "$INSTALL_DIR/data/jarvis.db-shm" ] && sudo mv "$INSTALL_DIR/data/jarvis.db-shm" "$INSTALL_DIR/data/dobby.db-shm"
-        green "  Database migrated to dobby.db"
-    fi
-    # Remove old jarvis service
-    if [ -f "/etc/systemd/system/jarvis.service" ]; then
-        sudo systemctl disable jarvis 2>/dev/null || true
-        sudo rm -f "/etc/systemd/system/jarvis.service"
-        sudo systemctl daemon-reload
-        green "  Old jarvis service removed"
-    fi
-fi
-
-# Migrate env directory if old one exists
-if [ -d "/etc/jarvis" ] && [ ! -d "/etc/dobby" ]; then
-    echo "Migrating config from /etc/jarvis to /etc/dobby..."
-    sudo mv /etc/jarvis /etc/dobby
-    if [ -f "$ENV_FILE" ]; then
-        sudo sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
-        sudo sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
-        sudo sed -i 's/# Jarvis/# Dobby/g' "$ENV_FILE"
-    fi
-    green "  Config migrated to /etc/dobby"
-fi
 
 if [ -d "$INSTALL_DIR" ]; then
     # Backup database before re-install/upgrade (service is stopped above)

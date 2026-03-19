@@ -116,9 +116,9 @@ if $DRY_RUN; then
   exit 0
 fi
 
-# Get existing crontab, remove old Dobby/Jarvis blocks, add new one
+# Get existing crontab, remove old Dobby block, add new one
 EXISTING=$(crontab -l 2>/dev/null || true)
-CLEANED=$(echo "$EXISTING" | sed "/$MARKER_START/,/$MARKER_END/d" | sed '/# --- Jarvis Agents (auto-generated) ---/,/# --- End Jarvis Agents ---/d')
+CLEANED=$(echo "$EXISTING" | sed "/$MARKER_START/,/$MARKER_END/d")
 NEW_CRONTAB="$CLEANED
 $BLOCK"
 

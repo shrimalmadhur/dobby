@@ -153,13 +153,8 @@ echo "Stopping existing service (if running)..."
 if [ "$OS" = "Darwin" ]; then
     launchctl bootout gui/"$ACTUAL_UID"/"$PLIST_LABEL" 2>/dev/null || true
     launchctl bootout system/"$PLIST_LABEL" 2>/dev/null || true
-    # Also stop old jarvis service if migrating
-    launchctl bootout gui/"$ACTUAL_UID"/com.jarvis.agent 2>/dev/null || true
-    launchctl bootout system/com.jarvis.agent 2>/dev/null || true
 else
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-    # Also stop old jarvis service if migrating
-    systemctl stop jarvis 2>/dev/null || true
 fi
 
 # --- Install dependencies and build ---
@@ -202,50 +197,6 @@ cp -r "$REPO_DIR/.next/static" "$STANDALONE_DIR/.next/static"
 
 # Fix ownership — cp/mkdir ran as root, but the service runs as $ACTUAL_USER
 chown -R "$ACTUAL_USER:$ACTUAL_GROUP" "$REPO_DIR/.next"
-
-# --- Migrate from old jarvis installation if it exists ---
-OLD_INSTALL_DIR="/usr/local/lib/jarvis"
-if [ -d "$OLD_INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR" ]; then
-    echo ""
-    echo "Migrating from jarvis to dobby..."
-    # Move the old installation to the new location
-    mv "$OLD_INSTALL_DIR" "$INSTALL_DIR"
-    # Rename the database file if it exists
-    if [ -f "$INSTALL_DIR/data/jarvis.db" ]; then
-        mv "$INSTALL_DIR/data/jarvis.db" "$INSTALL_DIR/data/dobby.db"
-        # Move WAL and SHM files if they exist
-        [ -f "$INSTALL_DIR/data/jarvis.db-wal" ] && mv "$INSTALL_DIR/data/jarvis.db-wal" "$INSTALL_DIR/data/dobby.db-wal"
-        [ -f "$INSTALL_DIR/data/jarvis.db-shm" ] && mv "$INSTALL_DIR/data/jarvis.db-shm" "$INSTALL_DIR/data/dobby.db-shm"
-        green "  Database migrated to dobby.db"
-    fi
-fi
-
-# Migrate env directory if old one exists
-OLD_ENV_DIR="/etc/jarvis"
-if [ -d "$OLD_ENV_DIR" ] && [ ! -d "$ENV_DIR" ]; then
-    echo "Migrating config from /etc/jarvis to /etc/dobby..."
-    mv "$OLD_ENV_DIR" "$ENV_DIR"
-    # Update env var names in the env file
-    if [ -f "$ENV_FILE" ]; then
-        if [ "$OS" = "Darwin" ]; then
-            sed -i '' 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
-            sed -i '' 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
-            sed -i '' 's/# Jarvis/# Dobby/g' "$ENV_FILE"
-        else
-            sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
-            sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
-            sed -i 's/# Jarvis/# Dobby/g' "$ENV_FILE"
-        fi
-    fi
-    green "  Config migrated to /etc/dobby"
-fi
-
-# Migrate log directory
-OLD_LOG_DIR="/var/log/jarvis"
-if [ -d "$OLD_LOG_DIR" ] && [ ! -d "$LOG_DIR" ]; then
-    mv "$OLD_LOG_DIR" "$LOG_DIR"
-    green "  Logs migrated to /var/log/dobby"
-fi
 
 # --- Deploy to install directory ---
 echo ""
@@ -341,19 +292,6 @@ else
     green "  $ENV_FILE already exists, keeping existing configuration"
 fi
 
-# --- Disable old jarvis service if it exists ---
-if [ "$OS" = "Darwin" ]; then
-    OLD_PLIST="$ACTUAL_HOME/Library/LaunchAgents/com.jarvis.agent.plist"
-    [ -f "$OLD_PLIST" ] && rm -f "$OLD_PLIST"
-else
-    if [ -f "/etc/systemd/system/jarvis.service" ]; then
-        systemctl disable jarvis 2>/dev/null || true
-        rm -f "/etc/systemd/system/jarvis.service"
-        systemctl daemon-reload
-        green "  Old jarvis service removed"
-    fi
-fi
-
 # --- Install service (OS-specific) ---
 echo ""
 
@@ -446,8 +384,6 @@ if [ "$OS" = "Linux" ]; then
     echo ""
     echo "Configuring sudo for agent runners..."
     SUDOERS_FILE="/etc/sudoers.d/dobby-agent"
-    # Clean up old jarvis sudoers file
-    [ -f "/etc/sudoers.d/jarvis-agent" ] && rm -f "/etc/sudoers.d/jarvis-agent"
     # Only grant NOPASSWD for repo-based package managers actually present.
     # Deliberately excludes dpkg/rpm — they install arbitrary local files
     # (including post-install scripts as root) with no provenance check.
