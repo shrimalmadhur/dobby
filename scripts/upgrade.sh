@@ -179,8 +179,13 @@ else
     sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 fi
 
-# --- Ensure log directory exists ---
-if [ ! -d "$LOG_DIR" ]; then
+# --- Ensure log directory exists (migrate old one if needed) ---
+OLD_LOG_DIR="/var/log/jarvis"
+if [ -d "$OLD_LOG_DIR" ] && [ ! -d "$LOG_DIR" ]; then
+    echo "Migrating logs from /var/log/jarvis to /var/log/dobby..."
+    sudo mv "$OLD_LOG_DIR" "$LOG_DIR"
+    green "  Logs migrated"
+elif [ ! -d "$LOG_DIR" ]; then
     echo "Creating log directory $LOG_DIR..."
     if [ "$OS" = "Darwin" ]; then
         mkdir -p "$LOG_DIR"
@@ -269,14 +274,54 @@ echo "Rebuilding better-sqlite3 for Node $(node --version)..."
 cd "$INSTALL_DIR" && npm rebuild better-sqlite3
 cd "$REPO_DIR"
 
+# --- Ensure service unit file exists (install or migrate) ---
+echo ""
+echo "Ensuring $SERVICE_NAME service is installed..."
+
+if [ "$OS" = "Darwin" ]; then
+    ACTUAL_UID="$(id -u)"
+    ACTUAL_HOME="$(eval echo ~"$(whoami)")"
+    AGENT_DIR="$ACTUAL_HOME/Library/LaunchAgents"
+    PLIST_PATH="$AGENT_DIR/$PLIST_LABEL.plist"
+
+    if [ ! -f "$PLIST_PATH" ]; then
+        echo "  Installing launchd agent..."
+        mkdir -p "$AGENT_DIR"
+        sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
+            "$REPO_DIR/dobby.plist" > "$PLIST_PATH"
+    fi
+else
+    if [ ! -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+        echo "  Installing systemd service..."
+        sudo sed -e "s|__USER__|$ACTUAL_USER|g" \
+            -e "s|__GROUP__|$ACTUAL_GROUP|g" \
+            -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
+            "$REPO_DIR/dobby.service" > "/tmp/${SERVICE_NAME}.service"
+        sudo mv "/tmp/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
+        sudo systemctl daemon-reload
+        sudo systemctl enable "$SERVICE_NAME"
+        green "  Service installed"
+    fi
+fi
+
+# --- Migrate env directory if old one exists ---
+OLD_ENV_DIR="/etc/jarvis"
+if [ -d "$OLD_ENV_DIR" ] && [ ! -d "/etc/dobby" ]; then
+    echo "Migrating config from /etc/jarvis to /etc/dobby..."
+    sudo mv "$OLD_ENV_DIR" "/etc/dobby"
+    if [ -f "/etc/dobby/env" ]; then
+        sudo sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
+        sudo sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
+        sudo sed -i 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
+    fi
+    green "  Config migrated to /etc/dobby"
+fi
+
 # --- Restart service (OS-specific) ---
 echo ""
 echo "Restarting $SERVICE_NAME..."
 
 if [ "$OS" = "Darwin" ]; then
-    ACTUAL_UID="$(id -u)"
-    ACTUAL_HOME="$(eval echo ~"$(whoami)")"
-    PLIST_PATH="$ACTUAL_HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
     # Re-bootstrap the service (was booted out before deploy)
     launchctl bootstrap gui/"$ACTUAL_UID" "$PLIST_PATH" 2>/dev/null || true
     launchctl kickstart -k gui/"$ACTUAL_UID"/"$PLIST_LABEL" 2>/dev/null || true
