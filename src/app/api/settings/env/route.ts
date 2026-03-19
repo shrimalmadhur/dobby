@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, renameSync, existsSync, lstatSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, lstatSync } from "fs";
 
 const ENV_FILE = "/etc/dobby/env";
 const MAX_VALUE_LENGTH = 1024;
