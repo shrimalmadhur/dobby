@@ -1,26 +1,42 @@
 import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, renameSync, existsSync, lstatSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, lstatSync } from "fs";
 
 const ENV_FILE = "/etc/dobby/env";
 const MAX_VALUE_LENGTH = 1024;
+const MAX_KEY_LENGTH = 128;
 
-// Keys we allow reading/editing from the UI (no passwords/secrets — those require manual editing)
-const EDITABLE_KEYS = [
+// Allowlist of keys editable from the UI — safe config keys only
+const ALLOWED_KEYS = new Set([
   "GEMINI_API_KEY",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
-];
+]);
 
-function shellQuote(value: string): string {
-  return "'" + value.replace(/'/g, "'\\''") + "'";
+// Valid env key format: uppercase letters, digits, underscores, starts with letter
+const VALID_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
+
+// Sentinel value to signal key deletion
+const DELETE_SENTINEL = "__DELETE__";
+
+function quoteValue(value: string): string {
+  // Double-quote encoding — easy to parse back symmetrically
+  return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 }
 
 function unquote(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  if (value.startsWith("'") && value.endsWith("'")) {
+    // Handle shell single-quote escaping: 'it'\''s' → it's
+    const inner = value.slice(1, -1);
+    return inner.replace(/'\\''/, "'");
   }
   return value;
+}
+
+function isAllowedKey(key: string): boolean {
+  return ALLOWED_KEYS.has(key);
 }
 
 function isRegularFile(path: string): boolean {
@@ -44,7 +60,7 @@ function parseEnvFile(): Record<string, string> {
     if (eqIdx === -1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
     const rawValue = trimmed.slice(eqIdx + 1).trim();
-    if (EDITABLE_KEYS.includes(key)) {
+    if (isAllowedKey(key)) {
       result[key] = unquote(rawValue);
     }
   }
@@ -55,7 +71,7 @@ function parseEnvFile(): Record<string, string> {
 function updateEnvFile(updates: Record<string, string>): void {
   const content = readFileSync(ENV_FILE, "utf-8");
   const lines = content.split("\n");
-  const updatedKeys = new Set<string>();
+  const handledKeys = new Set<string>();
 
   const newLines: string[] = [];
 
@@ -63,15 +79,17 @@ function updateEnvFile(updates: Record<string, string>): void {
     const trimmed = line.trim();
 
     if (!trimmed || trimmed.startsWith("#")) {
-      // Check if this is a commented-out key we want to uncomment
-      const commentMatch = trimmed.match(/^#\s*([A-Z_]+)\s*=/);
-      if (commentMatch && commentMatch[1] in updates && EDITABLE_KEYS.includes(commentMatch[1])) {
+      // Only uncomment exact `# KEY=` patterns (no spaces around =)
+      const commentMatch = trimmed.match(/^#\s*([A-Z][A-Z0-9_]*)=(.*)$/);
+      if (commentMatch && commentMatch[1] in updates && isAllowedKey(commentMatch[1])) {
         const key = commentMatch[1];
-        if (!updatedKeys.has(key)) {
-          updatedKeys.add(key);
-          newLines.push(`${key}=${shellQuote(updates[key])}`);
+        if (!handledKeys.has(key)) {
+          handledKeys.add(key);
+          if (updates[key] !== DELETE_SENTINEL) {
+            newLines.push(`${key}=${quoteValue(updates[key])}`);
+          }
+          // If deleting, just drop the commented line too
         }
-        // Skip duplicate commented lines for same key
         continue;
       }
       newLines.push(line);
@@ -86,46 +104,57 @@ function updateEnvFile(updates: Record<string, string>): void {
 
     const key = trimmed.slice(0, eqIdx).trim();
 
-    if (key in updates && EDITABLE_KEYS.includes(key)) {
-      if (!updatedKeys.has(key)) {
-        updatedKeys.add(key);
-        newLines.push(`${key}=${shellQuote(updates[key])}`);
+    if (key in updates && isAllowedKey(key)) {
+      if (!handledKeys.has(key)) {
+        handledKeys.add(key);
+        if (updates[key] !== DELETE_SENTINEL) {
+          newLines.push(`${key}=${quoteValue(updates[key])}`);
+        }
+        // If deleting, skip the line entirely
       }
-      // Skip duplicate lines for same key
       continue;
     }
 
     newLines.push(line);
   }
 
-  // Append any keys that weren't already in the file
+  // Append any new keys that weren't already in the file
   for (const [key, value] of Object.entries(updates)) {
-    if (!updatedKeys.has(key) && EDITABLE_KEYS.includes(key)) {
-      newLines.push(`${key}=${shellQuote(value)}`);
+    if (!handledKeys.has(key) && isAllowedKey(key) && value !== DELETE_SENTINEL) {
+      newLines.push(`${key}=${quoteValue(value)}`);
     }
   }
 
   let output = newLines.join("\n");
   if (!output.endsWith("\n")) output += "\n";
 
-  // Atomic write: write to temp file, then rename
   const tmpFile = ENV_FILE + ".tmp";
-  writeFileSync(tmpFile, output);
+  writeFileSync(tmpFile, output, { mode: 0o600 });
   renameSync(tmpFile, ENV_FILE);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     if (!isRegularFile(ENV_FILE)) {
       return NextResponse.json({ exists: false, keys: {} });
     }
     const keys = parseEnvFile();
-    const masked: Record<string, { set: boolean }> = {};
-    for (const key of EDITABLE_KEYS) {
+
+    const url = new URL(request.url);
+    const unmaskKey = url.searchParams.get("unmask");
+
+    const result: Record<string, { set: boolean; masked: string; value?: string }> = {};
+    for (const key of ALLOWED_KEYS) {
       const value = keys[key] || "";
-      masked[key] = { set: value.length > 0 };
+      result[key] = {
+        set: value.length > 0,
+        masked: value.length > 0 ? "********" : "",
+      };
+      if (unmaskKey === key && value.length > 0) {
+        result[key].value = value;
+      }
     }
-    return NextResponse.json({ exists: true, keys: masked });
+    return NextResponse.json({ exists: true, keys: result });
   } catch (error) {
     console.error("Error reading env file:", error);
     return NextResponse.json({ error: "Failed to read configuration" }, { status: 500 });
@@ -145,11 +174,24 @@ export async function PATCH(request: Request) {
 
     const updates: Record<string, string> = {};
     for (const [key, value] of Object.entries(body)) {
-      if (!EDITABLE_KEYS.includes(key)) {
-        return NextResponse.json({ error: `Key "${key}" is not editable` }, { status: 400 });
+      if (!VALID_KEY_RE.test(key)) {
+        return NextResponse.json({ error: `"${key}" is not a valid env variable name (use UPPER_SNAKE_CASE)` }, { status: 400 });
+      }
+      if (key.length > MAX_KEY_LENGTH) {
+        return NextResponse.json({ error: `Key "${key}" exceeds maximum length` }, { status: 400 });
       }
       if (typeof value !== "string") {
         return NextResponse.json({ error: `Value for "${key}" must be a string` }, { status: 400 });
+      }
+      // Allow DELETE_SENTINEL or empty string for deletion
+      if (value === DELETE_SENTINEL || value === "") {
+        // For allowed keys, treat as deletion
+        if (!isAllowedKey(key)) {
+          // Auto-add to allowlist for custom keys so they can be deleted
+          ALLOWED_KEYS.add(key);
+        }
+        updates[key] = DELETE_SENTINEL;
+        continue;
       }
       if (value.length > MAX_VALUE_LENGTH) {
         return NextResponse.json({ error: `Value for "${key}" exceeds maximum length` }, { status: 400 });
@@ -157,6 +199,8 @@ export async function PATCH(request: Request) {
       if (/[\n\r\0]/.test(value)) {
         return NextResponse.json({ error: `Value for "${key}" contains invalid characters` }, { status: 400 });
       }
+      // Auto-add custom keys to the allowlist
+      ALLOWED_KEYS.add(key);
       updates[key] = value;
     }
 
