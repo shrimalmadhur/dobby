@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projects, agents } from "@/lib/db/schema";
-import { eq, count, desc, sql } from "drizzle-orm";
+import { eq, count, desc } from "drizzle-orm";
 import { createProjectSchema } from "@/lib/validations/project";
 
 export async function GET() {
@@ -13,9 +13,11 @@ export async function GET() {
         description: projects.description,
         createdAt: projects.createdAt,
         updatedAt: projects.updatedAt,
-        agentCount: sql<number>`(SELECT COUNT(*) FROM agents WHERE agents.project_id = ${projects.id})`,
+        agentCount: count(agents.id),
       })
       .from(projects)
+      .leftJoin(agents, eq(agents.projectId, projects.id))
+      .groupBy(projects.id)
       .orderBy(desc(projects.createdAt));
 
     const result = rows.map((row) => ({
