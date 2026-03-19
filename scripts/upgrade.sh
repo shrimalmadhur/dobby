@@ -317,9 +317,15 @@ if [ -d "$OLD_ENV_DIR" ] && [ ! -d "/etc/dobby" ]; then
     echo "Migrating config from /etc/jarvis to /etc/dobby..."
     sudo mv "$OLD_ENV_DIR" "/etc/dobby"
     if [ -f "/etc/dobby/env" ]; then
-        sudo sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
-        sudo sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
-        sudo sed -i 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
+        if [ "$OS" = "Darwin" ]; then
+            sudo sed -i '' 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
+            sudo sed -i '' 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
+            sudo sed -i '' 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
+        else
+            sudo sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "/etc/dobby/env"
+            sudo sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "/etc/dobby/env"
+            sudo sed -i 's/# Jarvis/# Dobby/g' "/etc/dobby/env"
+        fi
     fi
     green "  Config migrated to /etc/dobby"
 fi

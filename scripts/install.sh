@@ -227,9 +227,15 @@ if [ -d "$OLD_ENV_DIR" ] && [ ! -d "$ENV_DIR" ]; then
     mv "$OLD_ENV_DIR" "$ENV_DIR"
     # Update env var names in the env file
     if [ -f "$ENV_FILE" ]; then
-        sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
-        sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
-        sed -i 's/# Jarvis/# Dobby/g' "$ENV_FILE"
+        if [ "$OS" = "Darwin" ]; then
+            sed -i '' 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
+            sed -i '' 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
+            sed -i '' 's/# Jarvis/# Dobby/g' "$ENV_FILE"
+        else
+            sed -i 's/JARVIS_PASSWORD/DOBBY_PASSWORD/g' "$ENV_FILE"
+            sed -i 's/JARVIS_API_SECRET/DOBBY_API_SECRET/g' "$ENV_FILE"
+            sed -i 's/# Jarvis/# Dobby/g' "$ENV_FILE"
+        fi
     fi
     green "  Config migrated to /etc/dobby"
 fi
