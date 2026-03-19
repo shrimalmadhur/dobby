@@ -148,7 +148,7 @@ export default function ProjectsPage() {
               className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[14px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/15 hover:border-accent hover:shadow-[0_0_12px_rgba(212,165,32,0.15)]"
             >
               <Plus className="h-3.5 w-3.5" />
-              found house
+              new house
             </button>
           </div>
         </div>
@@ -163,7 +163,7 @@ export default function ProjectsPage() {
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-[13px] font-mono font-bold text-accent uppercase tracking-widest">
-                &gt; found new house
+                &gt; establish new house
               </span>
               <button type="button" onClick={() => setShowCreate(false)} className="text-muted hover:text-foreground transition-colors">
                 <X className="h-3.5 w-3.5" />
@@ -231,7 +231,7 @@ export default function ProjectsPage() {
             <div className="text-[14px] font-mono text-muted-foreground space-y-1">
               <p className="text-muted">The Sorting Hat sees no houses yet...</p>
               <p className="text-muted-foreground">0 houses founded</p>
-              <p className="text-muted mt-4">cast <span className="text-accent">&quot;found house&quot;</span> to establish your first one</p>
+              <p className="text-muted mt-4">click <span className="text-accent">&quot;new house&quot;</span> to establish your first one</p>
             </div>
           </div>
         )}
