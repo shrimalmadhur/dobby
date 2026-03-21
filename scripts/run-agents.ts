@@ -11,7 +11,7 @@ if (fs.existsSync(".env.local")) {
 }
 import { loadAgentDefinitionsFromDB, loadAgentDefinitionById } from "../src/lib/runner/db-config-loader";
 import { runAgentTask } from "../src/lib/runner/agent-runner";
-import { sendAgentResult, getAgentTelegramConfig } from "../src/lib/runner/telegram-sender";
+import { sendAgentResult, sendAgentError, getAgentTelegramConfig } from "../src/lib/runner/telegram-sender";
 import { logRun } from "../src/lib/runner/run-log";
 
 async function runSingleAgent(def: Awaited<ReturnType<typeof loadAgentDefinitionsFromDB>>[number]) {
@@ -38,20 +38,22 @@ async function runSingleAgent(def: Awaited<ReturnType<typeof loadAgentDefinition
     console.error("Failed to log run:", err);
   }
 
-  // Send to Telegram if successful
-  if (result.success) {
-    const telegramConfig = await getAgentTelegramConfig(def.config.name, def.agentId);
-
-    if (telegramConfig) {
-      try {
+  // Send to Telegram (success or failure)
+  const telegramConfig = await getAgentTelegramConfig(def.config.name, def.agentId);
+  if (telegramConfig) {
+    try {
+      if (result.success) {
         await sendAgentResult(telegramConfig, def.config.name, result);
         console.log("Sent to Telegram.");
-      } catch (err) {
-        console.error("Failed to send to Telegram:", err);
+      } else {
+        await sendAgentError(telegramConfig, def.config.name, result);
+        console.log("Sent error to Telegram.");
       }
-    } else {
-      console.log("No Telegram config found, skipping notification.");
+    } catch (err) {
+      console.error("Failed to send to Telegram:", err);
     }
+  } else {
+    console.log("No Telegram config found, skipping notification.");
   }
 }
 
@@ -132,8 +134,27 @@ async function main() {
 }
 
 main()
-  .catch((err) => {
+  .catch(async (err) => {
     console.error("Fatal error:", err);
+
+    // Best-effort: send Telegram notification for script-level crashes
+    try {
+      const idIdx = process.argv.indexOf("--id");
+      const agentId = idIdx !== -1 ? process.argv[idIdx + 1] : undefined;
+      if (agentId) {
+        const config = await getAgentTelegramConfig("", agentId);
+        if (config) {
+          const { sendTelegramMessage, escapeHtml } = await import("../src/lib/notifications/telegram");
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await sendTelegramMessage(config,
+            `<b>[CRASH] Agent ${escapeHtml(agentId)}</b>\n\n<pre>${escapeHtml(errMsg.substring(0, 3000))}</pre>`
+          );
+        }
+      }
+    } catch {
+      // Telegram notification itself failed — nothing more we can do
+    }
+
     process.exit(1);
   })
   .finally(() => {

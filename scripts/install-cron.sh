@@ -67,6 +67,14 @@ AGENTS_TSV=$(cd "$PROJECT_DIR" && bun -e "
 }
 rm -f "$BUN_STDERR_FILE"
 
+# Resolve full path to bun so cron entries work without ~/.bun/bin in PATH
+BUN_PATH=$(command -v bun 2>/dev/null) || {
+  echo "Error: 'bun' not found in PATH after probing standard locations." >&2
+  echo "Searched: \$HOME/.bun/bin, /opt/homebrew/bin, /usr/local/bin" >&2
+  echo "Install bun (https://bun.sh) or ensure it's on PATH." >&2
+  exit 1
+}
+
 if [[ -z "$AGENTS_TSV" ]]; then
   echo "No enabled agents with schedules found in database."
   exit 0
@@ -89,8 +97,10 @@ while IFS=$'\t' read -r agent_id agent_name schedule; do
     ENV_SOURCE="set -a && source '$ENV_FILE' && set +a && "
   fi
 
-  # Use --id instead of name to avoid breakage when agents are renamed
-  entry="$schedule ${ENV_SOURCE}cd '$RUN_DIR' && bun run scripts/run-agents.ts --id '$agent_id' >> '$LOG_DIR/agents.log' 2>&1"
+  # Use --id instead of name to avoid breakage when agents are renamed.
+  # The || clause ensures script-level crashes (import errors, missing deps) are
+  # explicitly logged instead of silently swallowed.
+  entry="$schedule ${ENV_SOURCE}cd '$RUN_DIR' && { '$BUN_PATH' run scripts/run-agents.ts --id '$agent_id' 2>&1 || echo \"[CRON-FAIL] agent=$agent_id exit=\$? at=\$(date -Iseconds)\" >&2; } >> '$LOG_DIR/agents.log' 2>&1"
   # Use real newlines (not \n literals) to avoid echo -e interpreting backslash sequences in names
   CRON_ENTRIES="${CRON_ENTRIES}
 # Agent: $agent_name ($agent_id)
