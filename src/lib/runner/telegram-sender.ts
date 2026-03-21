@@ -1,6 +1,7 @@
 import {
   sendTelegramMessage,
   markdownToTelegramHtml,
+  escapeHtml,
 } from "@/lib/notifications/telegram";
 import { db } from "@/lib/db";
 import { notificationConfigs } from "@/lib/db/schema";
@@ -87,6 +88,37 @@ export async function sendAgentResult(
   ].join(" | ");
 
   const message = [outputHtml, "", `<i>${meta}</i>`].join("\n");
+
+  await sendTelegramMessage(telegramConfig, message);
+}
+
+/**
+ * Send an agent's run failure to its dedicated Telegram bot.
+ */
+export async function sendAgentError(
+  telegramConfig: { botToken: string; chatId: string },
+  agentName: string,
+  result: RunResult
+): Promise<void> {
+  const errorDetail = result.error || "Unknown error";
+  const maxLen = 3800;
+  const trimmedError =
+    errorDetail.length > maxLen
+      ? errorDetail.substring(0, maxLen) + "..."
+      : errorDetail;
+
+  const meta = [
+    `Model: ${result.model}`,
+    `Time: ${(result.durationMs / 1000).toFixed(1)}s`,
+  ].join(" | ");
+
+  const message = [
+    `<b>[FAILED] ${escapeHtml(agentName)}</b>`,
+    "",
+    `<pre>${escapeHtml(trimmedError)}</pre>`,
+    "",
+    `<i>${meta}</i>`,
+  ].join("\n");
 
   await sendTelegramMessage(telegramConfig, message);
 }
