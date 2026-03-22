@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { PIPELINE_PHASES } from "@/lib/issues/phase-labels";
 
 interface IssueDetail {
   id: string;
@@ -42,15 +43,7 @@ interface IssueDetail {
   messages: { id: number; direction: string; message: string; createdAt: string }[];
 }
 
-const PHASES = [
-  { phase: 1, label: "Plan" },
-  { phase: 2, label: "Review #1" },
-  { phase: 3, label: "Review #2" },
-  { phase: 4, label: "Implement" },
-  { phase: 5, label: "Code Review #1" },
-  { phase: 6, label: "Code Review #2" },
-  { phase: 7, label: "Create PR" },
-];
+const PHASES = PIPELINE_PHASES;
 
 function PipelineBar({ currentPhase, status }: { currentPhase: number; status: string }) {
   const isFailed = status === "failed";
@@ -158,7 +151,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
       if (res.ok) {
         setIssue(await res.json());
       } else {
-        setError("Issue not found");
+        setError("Quest not found on the map");
       }
     } catch {
       setError("Could not connect to server");
@@ -219,7 +212,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
       <div className="flex items-center justify-center h-full">
         <div className="flex items-center gap-2 text-[14px] font-mono text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-          loading issue...
+          revealing quest details...
         </div>
       </div>
     );
@@ -228,7 +221,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
   if (error || !issue) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-[14px] font-mono text-red">{error || "Issue not found"}</div>
+        <div className="text-[14px] font-mono text-red">{error || "Quest not found on the map"}</div>
       </div>
     );
   }
@@ -248,7 +241,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
           <div className="animate-fade-in">
             <Link href="/issues" className="flex items-center gap-1.5 text-[13px] font-mono text-muted-foreground hover:text-accent mb-3 transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" />
-              back to issues
+              back to map
             </Link>
             <div className="flex items-start justify-between">
               <div>
@@ -318,14 +311,14 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
 
         {issue.status === "waiting_for_input" && (
           <div className="border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-[14px] font-mono text-amber-400">
-            Waiting for your reply via Telegram...
+            Awaiting your owl via Telegram...
           </div>
         )}
 
         {/* Pipeline progress */}
         <section className="term-card p-5">
           <div className="text-[12px] font-mono text-muted uppercase tracking-wider mb-4">
-            pipeline progress
+            spell progress
           </div>
           <PipelineBar currentPhase={issue.currentPhase} status={issue.status} />
         </section>
@@ -334,17 +327,17 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
         <CollapsibleSection title="Issue Description" content={issue.description} defaultOpen />
 
         {/* Phase outputs */}
-        <CollapsibleSection title="Plan" content={issue.planOutput} defaultOpen={issue.currentPhase <= 3} />
-        <CollapsibleSection title="Plan Review #1 (Adversarial)" content={issue.planReview1} />
-        <CollapsibleSection title="Plan Review #2 (Completeness)" content={issue.planReview2} />
-        <CollapsibleSection title="Code Review #1" content={issue.codeReview1} />
-        <CollapsibleSection title="Code Review #2" content={issue.codeReview2} />
+        <CollapsibleSection title="The Plot" content={issue.planOutput} defaultOpen={issue.currentPhase <= 3} />
+        <CollapsibleSection title="Snape's Inspection" content={issue.planReview1} />
+        <CollapsibleSection title="McGonagall's Review" content={issue.planReview2} />
+        <CollapsibleSection title="O.W.L. Results" content={issue.codeReview1} />
+        <CollapsibleSection title="N.E.W.T. Results" content={issue.codeReview2} />
 
         {/* Q&A Thread */}
         {issue.messages.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-[13px] font-mono font-bold text-accent uppercase tracking-widest">
-              &gt; Q&amp;A Thread
+              &gt; Owl Correspondence
             </h2>
             <div className="space-y-2">
               {issue.messages.map((msg) => (
