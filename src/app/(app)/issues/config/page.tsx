@@ -304,16 +304,16 @@ export default function IssuesConfigPage() {
           <div className="animate-fade-in">
             <Link href="/issues" className="flex items-center gap-1.5 text-[13px] font-mono text-muted-foreground hover:text-accent mb-3 transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" />
-              back to issues
+              back to map
             </Link>
             <div className="flex items-center gap-2">
               <span className="text-accent text-[14px] glow-text">&gt;&gt;</span>
               <h1 className="text-[24px] font-bold tracking-widest text-foreground uppercase glow-text">
-                Issue Config
+                Map Config
               </h1>
             </div>
             <p className="text-[14px] text-muted-foreground font-mono ml-6 mt-1">
-              // repositories and telegram bot setup
+              // configure your magical parchment
             </p>
           </div>
         </div>
@@ -335,10 +335,10 @@ export default function IssuesConfigPage() {
         {/* Telegram Bot Config */}
         <section className="space-y-3">
           <h2 className="text-[14px] font-mono font-bold text-accent uppercase tracking-widest">
-            &gt; Telegram Issues Bot
+            &gt; Telegram Owl Service
           </h2>
           <p className="text-[13px] font-mono text-muted-foreground ml-4">
-            Dedicated bot for receiving issues. Must be separate from the notification bot.
+            Dedicated bot for receiving quests. Must be separate from the notification owl.
           </p>
 
           {telegram?.configured ? (
@@ -589,7 +589,7 @@ export default function IssuesConfigPage() {
           {/* Repository list */}
           {repos.length === 0 && !showCreate && (
             <div className="text-[13px] font-mono text-muted-foreground ml-4">
-              No repositories configured. Add one to start receiving issues.
+              No repositories configured. Add one to start receiving quests.
             </div>
           )}
 
@@ -681,7 +681,7 @@ export default function IssuesConfigPage() {
                       </div>
                     )}
                     <div className="text-[12px] font-mono text-muted ml-4">
-                      {repo.issueCount} issues
+                      {repo.issueCount} quests
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

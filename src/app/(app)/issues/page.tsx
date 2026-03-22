@@ -10,6 +10,7 @@ import {
   Plus,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { PHASE_LABELS, STATUS_DISPLAY_NAMES } from "@/lib/issues/phase-labels";
 
 interface Issue {
   id: string;
@@ -24,17 +25,6 @@ interface Issue {
   updatedAt: string;
   completedAt: string | null;
 }
-
-const PHASE_LABELS = [
-  "Pending",
-  "Planning",
-  "Review #1",
-  "Review #2",
-  "Implementing",
-  "Code Review #1",
-  "Code Review #2",
-  "Creating PR",
-];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; dot?: string }> = {
   pending: { bg: "bg-muted/10", text: "text-muted-foreground" },
@@ -54,7 +44,7 @@ type FilterTab = "all" | "active" | "completed" | "failed";
 
 function StatusBadge({ status }: { status: string }) {
   const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
-  const label = status.replace(/_/g, " ");
+  const label = STATUS_DISPLAY_NAMES[status] || status.replace(/_/g, " ");
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono uppercase tracking-wider ${style.bg} ${style.text}`}>
       {style.dot && <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />}
@@ -125,12 +115,12 @@ function IssueCard({ issue, index }: { issue: Issue; index: number }) {
             <PipelineProgress currentPhase={issue.currentPhase} status={issue.status} />
             <span className="text-[11px] font-mono text-muted">
               {issue.status === "completed"
-                ? "done"
+                ? "mischief managed"
                 : issue.status === "failed"
-                  ? "failed"
+                  ? "caught by filch"
                   : issue.currentPhase > 0
                     ? `${PHASE_LABELS[issue.currentPhase] || `phase ${issue.currentPhase}`}`
-                    : "queued"}
+                    : "awaiting owl"}
             </span>
           </div>
 
@@ -179,7 +169,7 @@ export default function IssuesPage() {
         const data = await res.json();
         setIssues(data.issues);
       } else {
-        setError("Failed to load issues");
+        setError("The map refused to reveal its secrets");
       }
     } catch {
       setError("Could not connect to server");
@@ -210,10 +200,10 @@ export default function IssuesPage() {
   });
 
   const filterTabs: { key: FilterTab; label: string; count: number }[] = [
-    { key: "all", label: "All", count: issues.length },
-    { key: "active", label: "Active", count: issues.filter((i) => !["completed", "failed", "pending"].includes(i.status)).length },
-    { key: "completed", label: "Completed", count: issues.filter((i) => i.status === "completed").length },
-    { key: "failed", label: "Failed", count: issues.filter((i) => i.status === "failed").length },
+    { key: "all", label: "Entire Map", count: issues.length },
+    { key: "active", label: "Up to No Good", count: issues.filter((i) => !["completed", "failed", "pending"].includes(i.status)).length },
+    { key: "completed", label: "Mischief Managed", count: issues.filter((i) => i.status === "completed").length },
+    { key: "failed", label: "Caught by Filch", count: issues.filter((i) => i.status === "failed").length },
   ];
 
   return (
@@ -226,11 +216,11 @@ export default function IssuesPage() {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-accent text-[14px] glow-text">&gt;&gt;</span>
                 <h1 className="text-[24px] font-bold tracking-widest text-foreground uppercase glow-text">
-                  Issues
+                  Marauder&apos;s Map
                 </h1>
               </div>
               <p className="text-[14px] text-muted-foreground font-mono ml-6">
-                // autonomous code implementation pipeline
+                // I solemnly swear that I am up to no good
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -239,14 +229,14 @@ export default function IssuesPage() {
                 className="flex h-8 items-center gap-1.5 border border-border bg-surface px-3 text-[13px] font-mono text-muted-foreground transition-all hover:border-accent/50 hover:text-foreground"
               >
                 <Settings2 className="h-3.5 w-3.5" />
-                config
+                map config
               </Link>
               <Link
                 href="/issues/config"
                 className="flex h-8 items-center gap-1.5 border border-accent/50 bg-accent/5 px-4 text-[14px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/15 hover:border-accent"
               >
                 <Plus className="h-3.5 w-3.5" />
-                new issue
+                new quest
               </Link>
             </div>
           </div>
@@ -276,7 +266,7 @@ export default function IssuesPage() {
           <div className="flex items-center justify-center py-24">
             <div className="flex items-center gap-2 text-[14px] font-mono text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-              loading issues...
+              revealing the map...
             </div>
           </div>
         )}
@@ -292,8 +282,8 @@ export default function IssuesPage() {
         {!loading && !error && issues.length === 0 && (
           <div className="animate-fade-in flex flex-col items-center justify-center py-24 text-center">
             <div className="text-[14px] font-mono text-muted-foreground space-y-1">
-              <p className="text-muted">No issues yet...</p>
-              <p className="text-muted-foreground">0 issues created</p>
+              <p className="text-muted">The map reveals nothing...</p>
+              <p className="text-muted-foreground">No mischief afoot</p>
               <p className="text-muted mt-4">
                 Configure a repository in{" "}
                 <Link href="/issues/config" className="text-accent hover:underline">config</Link>
@@ -307,7 +297,7 @@ export default function IssuesPage() {
         {filtered.length > 0 && (
           <>
             <div className="text-[12px] font-mono text-muted uppercase tracking-wider">
-              {filtered.length} {filtered.length !== 1 ? "issues" : "issue"}
+              {filtered.length} {filtered.length !== 1 ? "quests" : "quest"}
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {filtered.map((issue, idx) => (
