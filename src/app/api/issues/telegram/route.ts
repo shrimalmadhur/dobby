@@ -4,6 +4,7 @@ import { notificationConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { maskToken, testTelegramNotification } from "@/lib/notifications/telegram";
 import { ensurePollerRunning } from "@/lib/issues/poller-manager";
+import { isValidBotToken } from "@/lib/telegram/api";
 
 const CHANNEL = "telegram-issues";
 
@@ -44,8 +45,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate bot token format to prevent URL manipulation
-    if (!/^\d+:[A-Za-z0-9_-]{35,}$/.test(botToken)) {
+    if (!isValidBotToken(botToken)) {
       return NextResponse.json(
         { error: "Invalid bot token format" },
         { status: 400 }

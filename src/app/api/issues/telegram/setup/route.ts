@@ -11,6 +11,7 @@ export async function POST(request: Request) {
 
     if (action === "validate") {
       const result = await validateBotToken(botToken);
+      // Drain stale updates so polling only sees new messages
       if (result.valid) {
         await clearPendingUpdates(botToken);
       }

@@ -10,7 +10,9 @@ import {
   X,
   Check,
   Send,
+  FolderOpen,
 } from "lucide-react";
+import { DirectoryPicker } from "@/components/ui/directory-picker";
 
 interface Repository {
   id: string;
@@ -44,6 +46,10 @@ export default function IssuesConfigPage() {
   const [createBranch, setCreateBranch] = useState("main");
   const [creating, setCreating] = useState(false);
 
+  // Browse state
+  const [showBrowseCreate, setShowBrowseCreate] = useState(false);
+  const [showBrowseEdit, setShowBrowseEdit] = useState(false);
+
   // Edit state
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -51,10 +57,14 @@ export default function IssuesConfigPage() {
   const [editUrl, setEditUrl] = useState("");
   const [editBranch, setEditBranch] = useState("");
 
-  // Telegram form
+  // Telegram setup flow
+  type TgPhase = "idle" | "validating" | "polling" | "manual" | "found" | "saving";
+  const [tgPhase, setTgPhase] = useState<TgPhase>("idle");
   const [tgBotToken, setTgBotToken] = useState("");
+  const [tgBotInfo, setTgBotInfo] = useState<{ botName: string; botUsername: string } | null>(null);
   const [tgChatId, setTgChatId] = useState("");
-  const [tgSaving, setTgSaving] = useState(false);
+  const [tgChatTitle, setTgChatTitle] = useState("");
+  const [tgManualChatId, setTgManualChatId] = useState("");
 
   async function fetchAll() {
     try {
@@ -172,41 +182,102 @@ export default function IssuesConfigPage() {
     setEditPath(repo.localRepoPath);
     setEditUrl(repo.githubRepoUrl || "");
     setEditBranch(repo.defaultBranch);
+    setShowBrowseEdit(false);
   }
 
-  async function handleSaveTelegram(e: React.FormEvent) {
-    e.preventDefault();
-    if (!tgBotToken.trim() || !tgChatId.trim()) return;
-    setTgSaving(true);
+  // Poll for chat ID after validation
+  useEffect(() => {
+    if (tgPhase !== "polling" || !tgBotToken) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    const poll = async () => {
+      if (cancelled || attempts >= maxAttempts) {
+        if (!cancelled && attempts >= maxAttempts) setTgPhase("manual");
+        return;
+      }
+      attempts++;
+      try {
+        const res = await fetch("/api/issues/telegram/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ botToken: tgBotToken, action: "poll" }),
+        });
+        const data = await res.json();
+        if (data.found && !cancelled) {
+          setTgChatId(data.chatId);
+          setTgChatTitle(data.chatTitle || "");
+          setTgPhase("found");
+          return;
+        }
+      } catch { /* retry */ }
+      if (!cancelled) setTimeout(poll, 3000);
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [tgPhase, tgBotToken]);
+
+  async function handleTgValidate() {
+    setError(null);
+    setTgPhase("validating");
+    try {
+      const res = await fetch("/api/issues/telegram/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botToken: tgBotToken, action: "validate" }),
+      });
+      const data = await res.json();
+      if (!data.valid) {
+        showError(data.error || "Invalid bot token");
+        setTgPhase("idle");
+        return;
+      }
+      setTgBotInfo({ botName: data.botName, botUsername: data.botUsername });
+      setTgPhase("polling");
+    } catch {
+      showError("Failed to validate token");
+      setTgPhase("idle");
+    }
+  }
+
+  async function handleTgSave(overrideChatId?: string) {
+    const finalChatId = overrideChatId || tgChatId;
+    if (!finalChatId) return;
+    const returnPhase: TgPhase = overrideChatId ? "manual" : "found";
+    setTgPhase("saving");
+    setError(null);
     try {
       const res = await fetch("/api/issues/telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          botToken: tgBotToken.trim(),
-          chatId: tgChatId.trim(),
-          test: true,
-        }),
+        body: JSON.stringify({ botToken: tgBotToken, chatId: finalChatId, test: true }),
       });
       if (!res.ok) {
         const data = await res.json();
-        showError(data.error || "Failed to save Telegram config");
+        showError(data.error || "Failed to save config");
+        setTgPhase(returnPhase);
         return;
       }
       setTgBotToken("");
       setTgChatId("");
+      setTgBotInfo(null);
+      setTgPhase("idle");
       showSuccess("Telegram bot configured and tested");
       await fetchAll();
     } catch {
-      showError("Failed to save Telegram config");
-    } finally {
-      setTgSaving(false);
+      showError("Failed to save config");
+      setTgPhase(returnPhase);
     }
   }
 
   async function handleDeleteTelegram() {
     try {
-      await fetch("/api/issues/telegram", { method: "DELETE" });
+      const res = await fetch("/api/issues/telegram", { method: "DELETE" });
+      if (!res.ok) {
+        showError("Failed to remove Telegram config");
+        return;
+      }
       showSuccess("Telegram config removed");
       await fetchAll();
     } catch {
@@ -296,42 +367,125 @@ export default function IssuesConfigPage() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSaveTelegram} className="term-card p-4 space-y-3">
-              <div className="space-y-1">
-                <label className="text-[12px] font-mono text-muted uppercase tracking-wider">bot token</label>
-                <input
-                  type="password"
-                  value={tgBotToken}
-                  onChange={(e) => setTgBotToken(e.target.value)}
-                  placeholder="123456:ABC-DEF..."
-                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[12px] font-mono text-muted uppercase tracking-wider">chat id</label>
-                <input
-                  type="text"
-                  value={tgChatId}
-                  onChange={(e) => setTgChatId(e.target.value)}
-                  placeholder="-100..."
-                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={tgSaving}
-                className="flex items-center gap-1.5 border border-accent bg-accent/10 px-4 py-1.5 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 disabled:opacity-40"
-              >
-                {tgSaving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Send className="h-3 w-3" />
-                )}
-                test &amp; save
-              </button>
-            </form>
+            <div className="term-card p-4 space-y-3">
+              {/* Step 1: Enter bot token */}
+              {(tgPhase === "idle" || tgPhase === "validating") && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-mono text-muted uppercase tracking-wider">bot token</label>
+                    <input
+                      type="password"
+                      value={tgBotToken}
+                      onChange={(e) => setTgBotToken(e.target.value)}
+                      placeholder="123456:ABC-DEF..."
+                      className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                      disabled={tgPhase === "validating"}
+                    />
+                    <p className="text-[12px] font-mono text-muted">
+                      Create a bot via <span className="text-muted-foreground">@BotFather</span> on Telegram, then paste the token.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleTgValidate}
+                    disabled={!tgBotToken.trim() || tgPhase === "validating"}
+                    className="flex items-center gap-1.5 border border-accent bg-accent/10 px-4 py-1.5 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 disabled:opacity-40"
+                  >
+                    {tgPhase === "validating" ? (
+                      <><Loader2 className="h-3 w-3 animate-spin" /> validating...</>
+                    ) : (
+                      <><Send className="h-3 w-3" /> connect</>
+                    )}
+                  </button>
+                </>
+              )}
+
+              {/* Step 2: Waiting for message */}
+              {tgPhase === "polling" && tgBotInfo && (
+                <>
+                  <div className="border border-accent/30 bg-accent/5 px-3 py-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                      <span className="text-[14px] font-mono text-foreground">Waiting for your message...</span>
+                    </div>
+                    <p className="text-[13px] font-mono text-muted-foreground">
+                      Open Telegram and send <code className="text-accent bg-background px-1">/start</code> to{" "}
+                      <span className="text-foreground">@{tgBotInfo.botUsername || tgBotInfo.botName}</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setTgPhase("idle"); setTgBotInfo(null); }}
+                    className="text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="inline h-3 w-3 mr-0.5" /> cancel
+                  </button>
+                </>
+              )}
+
+              {/* Step 2b: Manual chat ID entry (fallback after polling timeout) */}
+              {tgPhase === "manual" && (
+                <>
+                  <div className="border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-[13px] font-mono text-amber-400">
+                    Could not detect chat automatically. Enter the chat ID manually.
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-mono text-muted uppercase tracking-wider">chat id</label>
+                    <input
+                      type="text"
+                      value={tgManualChatId}
+                      onChange={(e) => setTgManualChatId(e.target.value)}
+                      placeholder="-100..."
+                      className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleTgSave(tgManualChatId)}
+                      disabled={!tgManualChatId.trim()}
+                      className="flex items-center gap-1.5 border border-accent bg-accent/10 px-4 py-1.5 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 disabled:opacity-40"
+                    >
+                      save
+                    </button>
+                    <button
+                      onClick={() => { setTgPhase("idle"); setTgBotInfo(null); }}
+                      className="text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <X className="inline h-3 w-3 mr-0.5" /> cancel
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Step 3: Chat detected */}
+              {tgPhase === "found" && (
+                <>
+                  <div className="border border-green/30 bg-green/5 px-3 py-2 text-[13px] font-mono text-green">
+                    Chat detected: <span className="text-foreground">{tgChatTitle}</span> ({tgChatId})
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleTgSave()}
+                      className="flex items-center gap-1.5 border border-accent bg-accent/10 px-4 py-1.5 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20"
+                    >
+                      <Check className="h-3 w-3" /> save &amp; test
+                    </button>
+                    <button
+                      onClick={() => { setTgPhase("idle"); setTgBotInfo(null); setTgChatId(""); }}
+                      className="text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <X className="inline h-3 w-3 mr-0.5" /> cancel
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Saving */}
+              {tgPhase === "saving" && (
+                <div className="flex items-center gap-2 text-[14px] font-mono text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                  saving and testing...
+                </div>
+              )}
+            </div>
           )}
         </section>
 
@@ -385,14 +539,31 @@ export default function IssuesConfigPage() {
               </div>
               <div className="space-y-1">
                 <label className="text-[12px] font-mono text-muted uppercase tracking-wider">local repo path *</label>
-                <input
-                  type="text"
-                  value={createPath}
-                  onChange={(e) => setCreatePath(e.target.value)}
-                  placeholder="/home/user/projects/my-repo"
-                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
-                  required
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={createPath}
+                    onChange={(e) => setCreatePath(e.target.value)}
+                    placeholder="/home/user/projects/my-repo"
+                    className="flex-1 border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowBrowseCreate(!showBrowseCreate)}
+                    className="flex items-center gap-1 border border-border px-2 py-2 text-[12px] font-mono text-muted-foreground hover:text-foreground hover:border-accent/50 transition-colors"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    browse
+                  </button>
+                </div>
+                {showBrowseCreate && (
+                  <DirectoryPicker
+                    gitOnly
+                    onSelect={(path) => { setCreatePath(path); setShowBrowseCreate(false); }}
+                    onCancel={() => setShowBrowseCreate(false)}
+                  />
+                )}
               </div>
               <div className="space-y-1">
                 <label className="text-[12px] font-mono text-muted uppercase tracking-wider">github url (optional)</label>
@@ -448,12 +619,28 @@ export default function IssuesConfigPage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[12px] font-mono text-muted uppercase">local path</label>
-                    <input
-                      type="text"
-                      value={editPath}
-                      onChange={(e) => setEditPath(e.target.value)}
-                      className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground outline-none focus:border-accent"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editPath}
+                        onChange={(e) => setEditPath(e.target.value)}
+                        className="flex-1 border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground outline-none focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowBrowseEdit(!showBrowseEdit)}
+                        className="flex items-center gap-1 border border-border px-2 py-2 text-[12px] font-mono text-muted-foreground hover:text-foreground hover:border-accent/50 transition-colors"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {showBrowseEdit && (
+                      <DirectoryPicker
+                        gitOnly
+                        onSelect={(path) => { setEditPath(path); setShowBrowseEdit(false); }}
+                        onCancel={() => setShowBrowseEdit(false)}
+                      />
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-[12px] font-mono text-muted uppercase">github url</label>
