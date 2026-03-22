@@ -177,7 +177,19 @@ async function runPoller() {
   while (true) {
     try {
       const freshConfig = await getIssuesTelegramConfig();
-      if (freshConfig) config = freshConfig;
+      if (freshConfig) {
+        config = freshConfig;
+      } else {
+        // Config was deleted — pause until re-configured
+        console.log("[issue-poller] Telegram config removed, pausing...");
+        while (!await getIssuesTelegramConfig()) {
+          await new Promise(r => setTimeout(r, 30000));
+        }
+        config = (await getIssuesTelegramConfig())!;
+        console.log("[issue-poller] Telegram config restored, resuming");
+        offset = await getOffset();
+        continue;
+      }
 
       offset = await runPollerIteration(config, offset);
     } catch (err) {
