@@ -681,7 +681,7 @@ export default function IssuesConfigPage() {
                       </div>
                     )}
                     <div className="text-[12px] font-mono text-muted ml-4">
-                      {repo.issueCount} issues
+                      {repo.issueCount} quests
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

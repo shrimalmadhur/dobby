@@ -324,7 +324,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
         </section>
 
         {/* Description */}
-        <CollapsibleSection title="Issue Description" content={issue.description} defaultOpen />
+        <CollapsibleSection title="Quest Description" content={issue.description} defaultOpen />
 
         {/* Phase outputs */}
         <CollapsibleSection title="The Plot" content={issue.planOutput} defaultOpen={issue.currentPhase <= 3} />
