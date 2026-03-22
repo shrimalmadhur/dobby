@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Settings2,
@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ExternalLink,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PHASE_LABELS, STATUS_DISPLAY_NAMES } from "@/lib/issues/phase-labels";
@@ -21,6 +22,7 @@ interface Issue {
   currentPhase: number;
   prUrl: string | null;
   error: string | null;
+  hasWorktree: boolean;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -161,6 +163,13 @@ export default function IssuesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("all");
+  const [cleanAllState, setCleanAllState] = useState<"idle" | "confirming" | "cleaning">("idle");
+  const [cleanResult, setCleanResult] = useState<string | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const worktreeCount = issues.filter(
+    (i) => i.hasWorktree && (i.status === "completed" || i.status === "failed")
+  ).length;
 
   const fetchIssues = useCallback(async () => {
     try {
@@ -177,6 +186,35 @@ export default function IssuesPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleCleanAll = useCallback(async () => {
+    if (cleanAllState === "idle") {
+      setCleanAllState("confirming");
+      confirmTimer.current = setTimeout(() => setCleanAllState("idle"), 3000);
+      return;
+    }
+    if (cleanAllState === "confirming") {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      setCleanAllState("cleaning");
+      try {
+        const res = await fetch("/api/issues/cleanup", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          const msg = data.errors?.length
+            ? `cleaned ${data.cleaned} worktrees (${data.errors.length} failed)`
+            : `cleaned ${data.cleaned} worktrees`;
+          setCleanResult(msg);
+          setTimeout(() => setCleanResult(null), 3000);
+        }
+      } catch {
+        setCleanResult("cleanup failed");
+        setTimeout(() => setCleanResult(null), 3000);
+      } finally {
+        setCleanAllState("idle");
+        fetchIssues();
+      }
+    }
+  }, [cleanAllState, fetchIssues]);
 
   useEffect(() => { fetchIssues(); }, [fetchIssues]);
 
@@ -224,6 +262,35 @@ export default function IssuesPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {cleanResult && (
+                <span className="text-[12px] font-mono text-green animate-fade-in">
+                  {cleanResult}
+                </span>
+              )}
+              {worktreeCount > 0 && (
+                <button
+                  onClick={handleCleanAll}
+                  disabled={cleanAllState === "cleaning"}
+                  className={`flex h-8 items-center gap-1.5 border px-3 text-[13px] font-mono transition-all ${
+                    cleanAllState === "confirming"
+                      ? "border-red/50 bg-red/10 text-red hover:bg-red/20"
+                      : cleanAllState === "cleaning"
+                        ? "border-border bg-surface text-muted-foreground cursor-wait"
+                        : "border-border bg-surface text-muted-foreground hover:border-red/50 hover:text-red"
+                  }`}
+                >
+                  {cleanAllState === "cleaning" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  {cleanAllState === "confirming"
+                    ? "confirm?"
+                    : cleanAllState === "cleaning"
+                      ? "cleaning..."
+                      : `clean worktrees (${worktreeCount})`}
+                </button>
+              )}
               <Link
                 href="/issues/config"
                 className="flex h-8 items-center gap-1.5 border border-border bg-surface px-3 text-[13px] font-mono text-muted-foreground transition-all hover:border-accent/50 hover:text-foreground"
