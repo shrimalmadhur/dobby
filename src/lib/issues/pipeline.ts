@@ -711,14 +711,6 @@ export async function runIssuePipeline(
         `Issue completed: <b>${escapeHtml(issue.title)}</b>\n` +
         (prUrl ? `PR: ${prUrl}` : "PR created (check issue detail for link)")
       );
-
-      // Clean up worktree on success (branch is already pushed)
-      try {
-        execFileSync("git", ["worktree", "remove", worktreeDir, "--force"], {
-          cwd: repo.localRepoPath, stdio: "ignore",
-        });
-        execFileSync("git", ["worktree", "prune"], { cwd: repo.localRepoPath, stdio: "ignore" });
-      } catch { /* best effort */ }
     }
 
   } catch (err) {

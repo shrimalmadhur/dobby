@@ -150,6 +150,7 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   const fetchIssue = useCallback(async () => {
     try {
@@ -198,6 +199,18 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
       await fetchIssue();
     } catch { /* ignore */ } finally {
       setCancelling(false);
+    }
+  }
+
+  async function handleCleanup() {
+    setCleaningUp(true);
+    try {
+      const res = await fetch(`/api/issues/${id}/cleanup`, { method: "POST" });
+      if (res.ok) {
+        await fetchIssue();
+      }
+    } catch { /* ignore */ } finally {
+      setCleaningUp(false);
     }
   }
 
@@ -384,7 +397,18 @@ export default function IssueDetailPage({ params }: { params: Promise<{ id: stri
                 <code className="text-[13px] font-mono text-muted-foreground">
                   {issue.worktreePath}
                 </code>
-                <CopyButton text={issue.worktreePath} />
+                <div className="flex items-center gap-2">
+                  <CopyButton text={issue.worktreePath} />
+                  {(issue.status === "completed" || issue.status === "failed") && (
+                    <button
+                      onClick={handleCleanup}
+                      disabled={cleaningUp}
+                      className="text-[11px] font-mono text-muted-foreground hover:text-red transition-colors whitespace-nowrap"
+                    >
+                      {cleaningUp ? "cleaning..." : "remove"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </section>
