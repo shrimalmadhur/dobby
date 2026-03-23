@@ -16,7 +16,7 @@ set -euo pipefail
 REPO_URL="https://github.com/shrimalmadhur/dobby.git"
 SRC_DIR="/usr/local/src/dobby"
 INSTALL_DIR="/usr/local/lib/dobby"
-LOCK_DIR="/tmp/dobby-install.lock"
+LOCK_DIR="/var/lock/dobby-install.lock"
 BRANCH="main"
 VERSION=""
 OS="$(uname -s)"
@@ -71,12 +71,20 @@ if [[ -n "$VERSION" ]] && [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
-# Validate branch/version names — first char must not be a hyphen
+# Validate branch/version names — first char must not be a hyphen, no .. sequences
 if [[ -n "$BRANCH" ]] && ! [[ "$BRANCH" =~ ^[a-zA-Z0-9._/][a-zA-Z0-9._/-]*$ ]]; then
     red "Error: Invalid branch name '$BRANCH'"
     exit 1
 fi
+if [[ -n "$BRANCH" ]] && [[ "$BRANCH" == *".."* ]]; then
+    red "Error: Invalid branch name '$BRANCH'"
+    exit 1
+fi
 if [[ -n "$VERSION" ]] && ! [[ "$VERSION" =~ ^[a-zA-Z0-9._/][a-zA-Z0-9._/-]*$ ]]; then
+    red "Error: Invalid version '$VERSION'"
+    exit 1
+fi
+if [[ -n "$VERSION" ]] && [[ "$VERSION" == *".."* ]]; then
     red "Error: Invalid version '$VERSION'"
     exit 1
 fi
@@ -188,6 +196,11 @@ if [ -d "$SRC_DIR" ]; then
         mv "$TEMP_DIR" "$SRC_DIR"
         trap 'rm -rf "$LOCK_DIR"' EXIT
         chown -R "$ACTUAL_USER:$ACTUAL_GROUP" "$SRC_DIR"
+
+        if [ -n "$VERSION" ]; then
+            sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" fetch origin --tags
+            sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" checkout "$VERSION"
+        fi
     else
         # Valid repo — fetch and update
         echo ""
@@ -198,11 +211,13 @@ if [ -d "$SRC_DIR" ]; then
             sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" fetch origin
         fi
 
+        yellow "Warning: Discarding any local changes in $SRC_DIR"
+        sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" reset --hard HEAD
+        sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" clean -fd
+
         if [ -n "$VERSION" ]; then
-            yellow "Warning: Discarding any local changes in $SRC_DIR"
             sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" checkout "$VERSION"
         else
-            yellow "Warning: Discarding any local changes in $SRC_DIR"
             sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" checkout "$BRANCH"
             sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" reset --hard "origin/$BRANCH"
         fi
@@ -221,7 +236,6 @@ else
     chown -R "$ACTUAL_USER:$ACTUAL_GROUP" "$SRC_DIR"
 
     if [ -n "$VERSION" ]; then
-        sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" fetch origin --tags
         sudo -u "$ACTUAL_USER" git -C "$SRC_DIR" checkout "$VERSION"
     fi
 fi
