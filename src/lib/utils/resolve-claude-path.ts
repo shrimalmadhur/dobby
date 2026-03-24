@@ -14,13 +14,13 @@ export function resolveClaudePath(): string {
   if (_cachedClaudePath) return _cachedClaudePath;
 
   const candidates = [
-    join(homedir(), ".local", "bin", "claude"),
+    join(/* turbopackIgnore: true */ homedir(), ".local", "bin", "claude"),
     "/usr/local/bin/claude",
     "/usr/bin/claude",
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (existsSync(/* turbopackIgnore: true */ candidate)) {
       _cachedClaudePath = candidate;
       return candidate;
     }
