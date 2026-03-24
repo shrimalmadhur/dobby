@@ -22,17 +22,7 @@ export const PHASE_TIMEOUT_MS = 15 * 60 * 1000;  // 15 min
 export const IMPL_TIMEOUT_MS = 30 * 60 * 1000;   // 30 min
 export const QA_TIMEOUT_MS = 30 * 60 * 1000;      // 30 min wait for reply
 
-export interface TelegramUpdate {
-  update_id: number;
-  message?: {
-    message_id: number;
-    chat: { id: number };
-    text?: string;
-    reply_to_message?: {
-      message_id: number;
-    };
-  };
-}
+export type { TelegramUpdate } from "@/lib/telegram/api";
 
 export interface PipelinePhaseResult {
   success: boolean;
