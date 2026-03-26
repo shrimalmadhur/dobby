@@ -139,7 +139,7 @@ export async function processTelegramUpdate(
 
       // If issue is completed, resume the Claude session to continue the conversation
       if (issue?.status === "completed" && messageText) {
-        handleCompletedIssueReply(issue, messageText, msg.message_id, config).catch((err) => {
+        handleCompletedIssueReply(issue.id, messageText, msg.message_id, config).catch((err) => {
           console.error(`[poller] Failed to handle completed issue reply:`, err);
         });
       }
@@ -198,8 +198,9 @@ export async function processTelegramUpdate(
 
 // ── Completed issue conversation ─────────────────────────────
 
-// Concurrency guard — only one resume per issue at a time
+// Concurrency guard + pending reply queue (one resume per issue at a time)
 const activeIssueResumes = new Set<string>();
+const pendingIssueReplies = new Map<string, { text: string; messageId: number; config: IssuesTelegramConfig }>();
 
 /**
  * Handle a reply to a completed issue by resuming the Claude session.
@@ -207,12 +208,14 @@ const activeIssueResumes = new Set<string>();
  * messages are stored in issueMessages for future reply matching.
  */
 async function handleCompletedIssueReply(
-  issue: typeof issues.$inferSelect,
+  issueId: string,
   userText: string,
   userMessageId: number,
   config: IssuesTelegramConfig
 ) {
-  if (activeIssueResumes.has(issue.id)) {
+  if (activeIssueResumes.has(issueId)) {
+    // Queue this reply — it will be processed after the current one finishes
+    pendingIssueReplies.set(issueId, { text: userText, messageId: userMessageId, config });
     try {
       await sendTelegramReply(config,
         `<i>Still processing your previous message, I'll get to this one next.</i>`,
@@ -222,18 +225,29 @@ async function handleCompletedIssueReply(
     return;
   }
 
-  // Find the session to resume: prefer the implementation session (phase 4),
-  // fall back to the planning session, then any available session
+  // Re-fetch issue to get current worktreePath (may have been cleaned up)
+  const [issue] = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+  if (!issue || issue.status !== "completed") return;
+
+  // Find the session to resume: prefer implementation (phase 4),
+  // fall back to planning session, then highest-numbered phase
   const sessionIds = (issue.phaseSessionIds as Record<string, string>) || {};
-  const sessionId = sessionIds["4"] || issue.planningSessionId || Object.values(sessionIds).pop();
+  const sessionId = sessionIds["7"] || sessionIds["6"] || sessionIds["4"]
+    || issue.planningSessionId || sessionIds["3"] || sessionIds["2"] || sessionIds["1"];
 
   if (!sessionId || !issue.worktreePath) {
-    console.log(`[poller] No session/worktree for completed issue ${issue.id.substring(0, 8)}, skipping conversation`);
+    console.log(`[poller] No session/worktree for completed issue ${issueId.substring(0, 8)}, skipping conversation`);
+    try {
+      await sendTelegramReply(config,
+        `<i>This issue's workspace has been cleaned up. The conversation can no longer be continued.</i>`,
+        userMessageId
+      );
+    } catch { /* best effort */ }
     return;
   }
 
-  activeIssueResumes.add(issue.id);
-  console.log(`[poller] Resuming session for completed issue ${issue.id.substring(0, 8)}: "${userText.substring(0, 80)}${userText.length > 80 ? "..." : ""}"`);
+  activeIssueResumes.add(issueId);
+  console.log(`[poller] Resuming session for completed issue ${issueId.substring(0, 8)}: "${userText.substring(0, 80)}${userText.length > 80 ? "..." : ""}"`);
 
   try {
     const response = await resumeSession(sessionId, issue.worktreePath, userText);
@@ -246,15 +260,15 @@ async function handleCompletedIssueReply(
 
     // Store Claude's response so the user can reply to it too (chain continues)
     await db.insert(issueMessages).values({
-      issueId: issue.id,
+      issueId,
       direction: "from_claude",
       message: response,
       telegramMessageId: botMsgId,
     });
 
-    console.log(`[poller] Sent conversation response for issue ${issue.id.substring(0, 8)} (msgId: ${botMsgId})`);
+    console.log(`[poller] Sent conversation response for issue ${issueId.substring(0, 8)} (msgId: ${botMsgId})`);
   } catch (err) {
-    console.error(`[poller] Error resuming session for issue ${issue.id.substring(0, 8)}:`, err);
+    console.error(`[poller] Error resuming session for issue ${issueId.substring(0, 8)}:`, err);
     try {
       await sendTelegramReply(config,
         `<i>Something went wrong processing your reply. Please try again.</i>`,
@@ -262,6 +276,15 @@ async function handleCompletedIssueReply(
       );
     } catch { /* best effort */ }
   } finally {
-    activeIssueResumes.delete(issue.id);
+    activeIssueResumes.delete(issueId);
+
+    // Process queued reply if one was waiting
+    const pending = pendingIssueReplies.get(issueId);
+    if (pending) {
+      pendingIssueReplies.delete(issueId);
+      handleCompletedIssueReply(issueId, pending.text, pending.messageId, pending.config).catch((err) => {
+        console.error(`[poller] queued handleCompletedIssueReply error:`, err);
+      });
+    }
   }
 }

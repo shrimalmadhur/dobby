@@ -1438,13 +1438,14 @@ export async function runIssuePipeline(
 
       // Send completion message and store it in issueMessages so the user
       // can reply to continue the conversation in the same Claude session
-      const completionText = `Issue completed: <b>${escapeHtml(issue.title)}</b>\nPR: ${escapeHtml(prUrl)}\n\n<i>Reply to this message to continue the conversation.</i>`;
+      const completionHtml = `Issue completed: <b>${escapeHtml(issue.title)}</b>\nPR: ${escapeHtml(prUrl)}\n\n<i>Reply to this message to continue the conversation.</i>`;
+      const completionPlain = `Issue completed: ${issue.title}\nPR: ${prUrl}\n\nReply to this message to continue the conversation.`;
       try {
-        const msgId = await sendTelegramMessageWithId(telegramConfig, completionText);
+        const msgId = await sendTelegramMessageWithId(telegramConfig, completionHtml);
         await db.insert(issueMessages).values({
           issueId,
           direction: "from_claude",
-          message: completionText,
+          message: completionPlain,
           telegramMessageId: msgId,
         });
       } catch (err) {

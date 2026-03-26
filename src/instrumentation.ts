@@ -7,7 +7,4 @@ export async function register() {
 
   const { ensurePollerRunning } = await import("@/lib/issues/poller-manager");
   ensurePollerRunning();
-
-  const { ensureConversationPollerRunning } = await import("@/lib/runner/conversation-poller");
-  ensureConversationPollerRunning();
 }

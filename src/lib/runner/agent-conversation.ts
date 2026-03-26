@@ -1,39 +1,10 @@
 import { spawn } from "node:child_process";
-import { db } from "@/lib/db";
-import { agentConversations } from "@/lib/db/schema";
 import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 import { buildChildEnv } from "./agent-memory";
 
 // ── Constants ────────────────────────────────────────────────
 
 const RESUME_TIMEOUT_MS = 5 * 60 * 1000; // 5 min per reply
-
-// ── Create conversation record ───────────────────────────────
-
-/**
- * Create an agent conversation record in the DB.
- * The conversation poller will pick this up and start listening for replies.
- */
-export async function createConversation(opts: {
-  agentId: string;
-  agentRunId?: string;
-  claudeSessionId: string;
-  workspaceDir: string;
-  botToken: string;
-  chatId: string;
-  botMessageId: number;
-}): Promise<string> {
-  const [row] = await db.insert(agentConversations).values({
-    agentId: opts.agentId,
-    agentRunId: opts.agentRunId,
-    claudeSessionId: opts.claudeSessionId,
-    workspaceDir: opts.workspaceDir,
-    botToken: opts.botToken,
-    chatId: opts.chatId,
-    botMessageIds: [opts.botMessageId],
-  }).returning({ id: agentConversations.id });
-  return row.id;
-}
 
 // ── Resume a Claude session ──────────────────────────────────
 
