@@ -236,22 +236,6 @@ export const agentRunToolUses = sqliteTable("agent_run_tool_uses", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
 });
 
-// ── Agent Conversations (Telegram reply → Claude resume) ─────
-
-export const agentConversations = sqliteTable("agent_conversations", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  agentId: text("agent_id").references(() => agents.id, { onDelete: "cascade" }).notNull(),
-  agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
-  claudeSessionId: text("claude_session_id").notNull(),
-  workspaceDir: text("workspace_dir").notNull(),
-  botToken: text("bot_token").notNull(),
-  chatId: text("chat_id").notNull(),
-  botMessageIds: text("bot_message_ids", { mode: "json" }).$type<number[]>().default([]),
-  status: text("status").notNull().default("active"), // 'active' | 'closed'
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
-});
-
 // ── Repositories (for issue tracking) ────────────────────────
 
 export const repositories = sqliteTable("repositories", {
