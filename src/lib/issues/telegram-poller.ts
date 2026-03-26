@@ -252,9 +252,11 @@ async function handleCompletedIssueReply(
   try {
     const response = await resumeSession(sessionId, issue.worktreePath, userText);
 
-    const truncated = response.length > TELEGRAM_SAFE_MSG_LEN
-      ? response.substring(0, TELEGRAM_SAFE_MSG_LEN) + "..."
-      : response;
+    // Guard against empty responses (e.g., tool-only runs with no text output)
+    const displayText = response.trim() || "(No text response)";
+    const truncated = displayText.length > TELEGRAM_SAFE_MSG_LEN
+      ? displayText.substring(0, TELEGRAM_SAFE_MSG_LEN) + "..."
+      : displayText;
     const responseHtml = markdownToTelegramHtml(truncated);
     const botMsgId = await sendTelegramReply(config, responseHtml, userMessageId);
 
@@ -282,6 +284,8 @@ async function handleCompletedIssueReply(
     const pending = pendingIssueReplies.get(issueId);
     if (pending) {
       pendingIssueReplies.delete(issueId);
+      // Re-acquire guard before fire-and-forget to prevent concurrent resumes
+      activeIssueResumes.add(issueId);
       handleCompletedIssueReply(issueId, pending.text, pending.messageId, pending.config).catch((err) => {
         console.error(`[poller] queued handleCompletedIssueReply error:`, err);
       });
