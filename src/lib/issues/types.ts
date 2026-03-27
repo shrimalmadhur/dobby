@@ -23,6 +23,7 @@ export const IMPL_TIMEOUT_MS = 30 * 60 * 1000;   // 30 min
 export const QA_TIMEOUT_MS = 30 * 60 * 1000;      // 30 min wait for reply
 
 export type { TelegramUpdate } from "@/lib/telegram/api";
+export type { IssuesSlackConfig, IssuesTransportConfig } from "./slack";
 
 export interface PipelinePhaseResult {
   success: boolean;

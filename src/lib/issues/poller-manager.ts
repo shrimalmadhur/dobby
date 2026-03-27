@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { issues, notificationConfigs } from "@/lib/db/schema";
-import { eq, and, isNull, isNotNull, lt, sql } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import { getIssuesTelegramConfig, pollTelegramUpdates, processTelegramUpdate } from "./telegram-poller";
 import { runIssuePipeline } from "./pipeline";
-import type { IssuesTelegramConfig } from "./types";
+import type { IssuesTelegramConfig, IssuesTransportConfig } from "./types";
 
 // Stale lock threshold: 4 hours (covers worst-case pipeline: 3 plan iterations + impl + reviews + QA waits)
 const STALE_LOCK_MS = 4 * 60 * 60 * 1000;
@@ -11,8 +11,21 @@ const STALE_LOCK_MS = 4 * 60 * 60 * 1000;
 const MAX_CONCURRENT_PIPELINES = 2;
 
 // Use globalThis to survive HMR in dev
-const g = globalThis as unknown as { _issuePoller?: { running: boolean; starting: boolean } };
+const g = globalThis as unknown as {
+  _issuePoller?: { running: boolean; starting: boolean };
+  _issueLocksCleared?: boolean;
+};
 g._issuePoller ??= { running: false, starting: false };
+
+function transportIssueCondition(kind: IssuesTransportConfig["kind"]) {
+  if (kind === "slack") {
+    return and(isNotNull(issues.slackChannelId), isNotNull(issues.slackThreadTs));
+  }
+
+  // Telegram remains the default transport for legacy/manual issues that have
+  // no Slack thread metadata.
+  return or(isNull(issues.slackChannelId), isNull(issues.slackThreadTs));
+}
 
 /**
  * Ensure the Telegram issue poller is running in-process.
@@ -78,15 +91,17 @@ export async function clearStaleLocks() {
 /** Clear ALL locks unconditionally. Called on poller startup since no pipeline
  *  from a previous process can still be running after a restart. */
 export async function clearAllLocks() {
+  if (g._issueLocksCleared) return;
   const cleared = await db.update(issues).set({ lockedBy: null, lockedAt: null })
     .where(isNotNull(issues.lockedBy))
     .returning({ id: issues.id });
   if (cleared.length > 0) {
     console.log(`[issue-poller] Startup: cleared ${cleared.length} orphaned lock(s) from previous process`);
   }
+  g._issueLocksCleared = true;
 }
 
-export async function startPendingPipelines(config: IssuesTelegramConfig) {
+export async function startPendingPipelines(config: IssuesTransportConfig) {
   // Check how many pipelines are currently running
   const [{ activeCount }] = await db.select({ activeCount: sql<number>`count(*)` })
     .from(issues).where(isNotNull(issues.lockedBy));
@@ -94,7 +109,7 @@ export async function startPendingPipelines(config: IssuesTelegramConfig) {
 
   const slotsAvailable = MAX_CONCURRENT_PIPELINES - activeCount;
   const pendingIssues = await db.select().from(issues)
-    .where(and(eq(issues.status, "pending"), isNull(issues.lockedBy)))
+    .where(and(eq(issues.status, "pending"), isNull(issues.lockedBy), transportIssueCondition(config.kind)))
     .orderBy(issues.createdAt)
     .limit(slotsAvailable);
 
@@ -120,7 +135,7 @@ export async function startPendingPipelines(config: IssuesTelegramConfig) {
   }
 }
 
-export async function startResumedPipelines(config: IssuesTelegramConfig) {
+export async function startResumedPipelines(config: IssuesTransportConfig) {
   // Respect concurrency cap (same as startPendingPipelines)
   const [{ activeCount }] = await db.select({ activeCount: sql<number>`count(*)` })
     .from(issues).where(isNotNull(issues.lockedBy));
@@ -130,7 +145,8 @@ export async function startResumedPipelines(config: IssuesTelegramConfig) {
   const resumedIssues = await db.select().from(issues)
     .where(and(
       sql`${issues.status} NOT IN ('pending', 'completed', 'failed', 'waiting_for_input')`,
-      isNull(issues.lockedBy)
+      isNull(issues.lockedBy),
+      transportIssueCondition(config.kind)
     ))
     .limit(slotsAvailable);
 
@@ -163,8 +179,8 @@ export async function runPollerIteration(config: IssuesTelegramConfig, offset: n
   }
 
   await clearStaleLocks();
-  await startPendingPipelines(config);
-  await startResumedPipelines(config);
+  await startPendingPipelines({ kind: "telegram", ...config });
+  await startResumedPipelines({ kind: "telegram", ...config });
 
   return nextOffset;
 }

@@ -3,14 +3,16 @@ import { db } from "@/lib/db";
 import { issues, repositories } from "@/lib/db/schema";
 import { eq, desc, and, isNull, isNotNull, count, type SQL } from "drizzle-orm";
 import { ensurePollerRunning } from "@/lib/issues/poller-manager";
+import { ensureSlackIssuesSocketRunning } from "@/lib/issues/slack-socket";
 import { createIssueSchema } from "@/lib/validations/issue";
 import { withErrorHandler } from "@/lib/api/utils";
 
 export const runtime = "nodejs";
 
 export const GET = withErrorHandler(async (request: Request) => {
-  // Start the in-process Telegram poller on first access (lazy init)
+  // Start the in-process issue transports on first access (lazy init)
   ensurePollerRunning();
+  ensureSlackIssuesSocketRunning();
 
   const { searchParams } = new URL(request.url);
   const repositoryId = searchParams.get("repositoryId");

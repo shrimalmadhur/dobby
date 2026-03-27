@@ -259,6 +259,8 @@ export const issues = sqliteTable("issues", {
   currentPhase: integer("current_phase").notNull().default(0),
   telegramMessageId: integer("telegram_message_id"),
   telegramChatId: text("telegram_chat_id"),
+  slackChannelId: text("slack_channel_id"),
+  slackThreadTs: text("slack_thread_ts"),
   prUrl: text("pr_url"),
   prStatus: text("pr_status"),  // "open" | "closed" | "merged" | null
   prSummary: text("pr_summary"),
@@ -280,6 +282,7 @@ export const issues = sqliteTable("issues", {
   archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
 }, (table) => [
   index("idx_issues_status_locked").on(table.status, table.lockedBy),
+  index("idx_issues_slack_thread").on(table.slackChannelId, table.slackThreadTs),
 ]);
 
 // ── Issue Messages (Q&A via Telegram) ────────────────────────
@@ -290,8 +293,11 @@ export const issueMessages = sqliteTable("issue_messages", {
   direction: text("direction").notNull(), // 'from_claude' | 'from_user'
   message: text("message").notNull(),
   telegramMessageId: integer("telegram_message_id"),
+  slackMessageTs: text("slack_message_ts"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).$defaultFn(() => new Date()).notNull(),
-});
+}, (table) => [
+  index("idx_issue_messages_slack_message_ts").on(table.slackMessageTs),
+]);
 
 // ── Issue Attachments (images from Telegram) ─────────────────
 

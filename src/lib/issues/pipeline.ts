@@ -8,14 +8,24 @@ import { getIssueAttachments } from "./attachments";
 import { eq, and, gt } from "drizzle-orm";
 import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 import { getSetting, setSetting } from "@/lib/db/app-settings";
-import { sendTelegramMessageWithId, sendTelegramMessage, escapeHtml, TELEGRAM_SAFE_MSG_LEN } from "@/lib/notifications/telegram";
-import type { IssuesTelegramConfig, PipelinePhaseResult, IssueStatus } from "./types";
+import { sendTelegramMessageWithId, escapeHtml, TELEGRAM_SAFE_MSG_LEN } from "@/lib/notifications/telegram";
+import { sendSlackMessage, SLACK_SAFE_MSG_LEN } from "@/lib/notifications/slack";
+import type { PipelinePhaseResult, IssueStatus, IssuesTransportConfig } from "./types";
 import {
   PHASE_STATUS_MAP, MAX_PLAN_ITERATIONS, MAX_CODE_REVIEW_ITERATIONS,
   PHASE_TIMEOUT_MS, IMPL_TIMEOUT_MS, QA_TIMEOUT_MS,
 } from "./types";
 
 const MAX_FALLBACK_CHARS = 50_000;
+
+function telegramMarkupToSlackText(text: string): string {
+  return text
+    .replace(/<\/?(?:b|i|code|pre)>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
 
 /** Files that should never be auto-committed. Tested against full path from git status. */
 const SENSITIVE_FILE_PATTERN =
@@ -279,37 +289,81 @@ async function isCancelled(issueId: string): Promise<boolean> {
   return issue?.status === "failed";
 }
 
-async function notify(config: IssuesTelegramConfig, text: string) {
-  try {
+async function sendIssueTransportMessage(
+  issueId: string,
+  config: IssuesTransportConfig,
+  text: string
+): Promise<{ messageId?: number; slackTs?: string }> {
+  if (config.kind === "telegram") {
     const truncated = text.length > 4096 ? text.substring(0, 4093) + "..." : text;
-    await sendTelegramMessage(config, truncated);
+    const messageId = await sendTelegramMessageWithId(config, truncated);
+    return { messageId };
+  }
+
+  const [issue] = await db.select({
+    slackChannelId: issues.slackChannelId,
+    slackThreadTs: issues.slackThreadTs,
+  }).from(issues).where(eq(issues.id, issueId)).limit(1);
+
+  if (!issue?.slackChannelId || !issue.slackThreadTs) {
+    throw new Error("Slack issue thread metadata missing");
+  }
+
+  const result = await sendSlackMessage(
+    { botToken: config.botToken },
+    issue.slackChannelId,
+    telegramMarkupToSlackText(text).substring(0, SLACK_SAFE_MSG_LEN),
+    issue.slackThreadTs
+  );
+
+  return { slackTs: result.ts };
+}
+
+async function notify(issueId: string, config: IssuesTransportConfig, text: string) {
+  try {
+    await sendIssueTransportMessage(issueId, config, text);
   } catch (err) {
-    console.error("Failed to send Telegram notification:", err);
+    console.error("Failed to send issue notification:", err);
   }
 }
 
 async function handleQuestions(
   issueId: string,
   questions: string,
-  config: IssuesTelegramConfig
+  config: IssuesTransportConfig
 ): Promise<boolean> {
-  const truncatedQ = questions.length > TELEGRAM_SAFE_MSG_LEN
+  const truncatedQ = config.kind === "telegram" && questions.length > TELEGRAM_SAFE_MSG_LEN
     ? questions.substring(0, TELEGRAM_SAFE_MSG_LEN) + "..."
     : questions;
 
   // Capture time BEFORE sending so we don't miss fast replies
   const questionTime = new Date();
 
-  const msgId = await sendTelegramMessageWithId(config,
-    `Questions for issue <code>${issueId.substring(0, 8)}</code>:\n\n${escapeHtml(truncatedQ)}\n\n<i>Reply to this message to answer.</i>`
-  );
+  if (config.kind === "telegram") {
+    const msgId = await sendTelegramMessageWithId(config,
+      `Questions for issue <code>${issueId.substring(0, 8)}</code>:\n\n${escapeHtml(truncatedQ)}\n\n<i>Reply to this message to answer.</i>`
+    );
 
-  await db.insert(issueMessages).values({
-    issueId,
-    direction: "from_claude",
-    message: questions,
-    telegramMessageId: msgId,
-  });
+    await db.insert(issueMessages).values({
+      issueId,
+      direction: "from_claude",
+      message: questions,
+      telegramMessageId: msgId,
+    });
+  } else {
+    const result = await sendIssueTransportMessage(
+      issueId,
+      config,
+      `Questions for issue ${issueId.substring(0, 8)}:\n\n${truncatedQ}\n\nReply in this Slack thread to answer.`
+    );
+
+    await db.insert(issueMessages).values({
+      issueId,
+      direction: "from_claude",
+      message: questions,
+      slackMessageTs: result.slackTs,
+    });
+  }
 
   await db.update(issues).set({ status: "waiting_for_input", updatedAt: new Date() }).where(eq(issues.id, issueId));
 
@@ -826,7 +880,7 @@ Output the PR URL when done.`;
 
 export async function runIssuePipeline(
   issueId: string,
-  telegramConfig: IssuesTelegramConfig
+  transportConfig: IssuesTransportConfig
 ): Promise<void> {
   const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
   if (!issue) throw new Error(`Issue ${issueId} not found`);
@@ -916,7 +970,7 @@ export async function runIssuePipeline(
     if (startPhase <= 3) {
       if (await isCancelled(issueId)) return;
       await updatePhase(issueId, 1, "planning");
-      await notify(telegramConfig, `Planning started for: <b>${escapeHtml(issue.title)}</b>`);
+      await notify(issueId, transportConfig, `Planning started for: <b>${escapeHtml(issue.title)}</b>`);
 
       let planOutput = "";
       let planIterations = 0;
@@ -996,7 +1050,7 @@ export async function runIssuePipeline(
 
           // Handle questions
           if (planResult.hasQuestions && planResult.questions) {
-            const answered = await handleQuestions(issueId, planResult.questions, telegramConfig);
+            const answered = await handleQuestions(issueId, planResult.questions, transportConfig);
             if (!answered) {
               await failIssue(issueId, "Timed out waiting for user reply to questions");
               return;
@@ -1013,7 +1067,7 @@ export async function runIssuePipeline(
         // ── Phase 2: Plan Verification (2 reviewers in parallel) ──
         if (await isCancelled(issueId)) return;
         await updatePhase(issueId, 2, "reviewing_plan_1");
-        await notify(telegramConfig, `Plan verification started (2 reviewers in parallel)`);
+        await notify(issueId, transportConfig, `Plan verification started (2 reviewers in parallel)`);
 
         const priorFindingsText = priorPlanFindings.length > 0
           ? priorPlanFindings.join("\n\n========================================\n\n")
@@ -1089,7 +1143,7 @@ export async function runIssuePipeline(
           if (await isCancelled(issueId)) return;
 
           // ── Plan Fix: surgically address review findings ──
-          await notify(telegramConfig,
+          await notify(issueId, transportConfig,
             `Plan review round ${planIterations} failed. Fixing plan before attempt ${planIterations + 1}...`
           );
 
@@ -1145,11 +1199,11 @@ export async function runIssuePipeline(
 
       if (!planApproved) {
         await failIssue(issueId, `Plan could not pass review after ${MAX_PLAN_ITERATIONS} attempts`);
-        await notify(telegramConfig, `Planning failed after ${MAX_PLAN_ITERATIONS} attempts for: ${escapeHtml(issue.title)}`);
+        await notify(issueId, transportConfig, `Planning failed after ${MAX_PLAN_ITERATIONS} attempts for: ${escapeHtml(issue.title)}`);
         return;
       }
 
-      await notify(telegramConfig, `Plan approved. Starting implementation...`);
+      await notify(issueId, transportConfig, `Plan approved. Starting implementation...`);
     }
 
     // ── Phase 4: Implementation (resume planning session if possible) ──
@@ -1226,7 +1280,7 @@ export async function runIssuePipeline(
         return;
       }
 
-      await notify(telegramConfig, `Implementation complete. Starting code review...`);
+      await notify(issueId, transportConfig, `Implementation complete. Starting code review...`);
     }
 
     // ── Phases 5-6: Adversarial Code Review + Auto-Fix Loop ──
@@ -1240,7 +1294,7 @@ export async function runIssuePipeline(
         // ── Phase 5: 3 specialist reviewers in parallel (READ-ONLY) ──
         if (await isCancelled(issueId)) return;
         await updatePhase(issueId, 5, "reviewing_code_1");
-        await notify(telegramConfig,
+        await notify(issueId, transportConfig,
           `Code review round ${crIterations}/${MAX_CODE_REVIEW_ITERATIONS} (3 specialist reviewers)`
         );
 
@@ -1306,7 +1360,7 @@ export async function runIssuePipeline(
 
         if (!anyFailed) {
           codeApproved = true;
-          await notify(telegramConfig, `All code reviews passed!`);
+          await notify(issueId, transportConfig, `All code reviews passed!`);
           break;
         }
 
@@ -1315,7 +1369,7 @@ export async function runIssuePipeline(
         // ── Phase 6: Auto-fix all issues ──
         if (await isCancelled(issueId)) return;
         await updatePhase(issueId, 6, "reviewing_code_2");
-        await notify(telegramConfig,
+        await notify(issueId, transportConfig,
           `Fixing code review findings (round ${crIterations}/${MAX_CODE_REVIEW_ITERATIONS})...`
         );
 
@@ -1372,7 +1426,7 @@ export async function runIssuePipeline(
             // Auto-commit any leftover changes before breaking, so they aren't lost
             autoCommitUncommittedChanges(worktreeDir,
               "fix: address code review findings\n\nAuto-committed by pipeline — fix phase did not commit.");
-            await notify(telegramConfig, `Fix agent made no new commits. Stopping review loop.`);
+            await notify(issueId, transportConfig, `Fix agent made no new commits. Stopping review loop.`);
             break;
           }
         } catch { /* ignore */ }
@@ -1381,11 +1435,11 @@ export async function runIssuePipeline(
         autoCommitUncommittedChanges(worktreeDir,
           "fix: address code review findings\n\nAuto-committed by pipeline — fix phase did not commit.");
 
-        await notify(telegramConfig, `Fixes applied. Re-reviewing...`);
+        await notify(issueId, transportConfig, `Fixes applied. Re-reviewing...`);
       }
 
       if (!codeApproved) {
-        await notify(telegramConfig,
+        await notify(issueId, transportConfig,
           `Code review reached max iterations (${MAX_CODE_REVIEW_ITERATIONS}). Proceeding to PR.`
         );
       }
@@ -1409,7 +1463,7 @@ export async function runIssuePipeline(
 
       if (!prResult.success) {
         await db.update(issues).set({ phaseSessionIds, status: "failed", error: `PR creation failed: ${prResult.output.substring(0, 2000)}`, updatedAt: new Date() }).where(eq(issues.id, issueId));
-        await notify(telegramConfig, `PR creation failed for: <b>${escapeHtml(issue.title)}</b>\n${escapeHtml(prResult.output.substring(0, 200))}`);
+        await notify(issueId, transportConfig, `PR creation failed for: <b>${escapeHtml(issue.title)}</b>\n${escapeHtml(prResult.output.substring(0, 200))}`);
         return;
       }
 
@@ -1418,7 +1472,7 @@ export async function runIssuePipeline(
 
       if (!prUrl) {
         await db.update(issues).set({ phaseSessionIds, status: "failed", error: `PR creation succeeded but no PR URL found in output. Claude may have failed to push or create the PR.\n\nOutput (truncated): ${prResult.output.substring(0, 2000)}`, updatedAt: new Date() }).where(eq(issues.id, issueId));
-        await notify(telegramConfig, `PR creation failed for: <b>${escapeHtml(issue.title)}</b>\nNo PR URL found in Claude output.`);
+        await notify(issueId, transportConfig, `PR creation failed for: <b>${escapeHtml(issue.title)}</b>\nNo PR URL found in Claude output.`);
         return;
       }
 
@@ -1453,13 +1507,23 @@ export async function runIssuePipeline(
       const completionHtml = `Issue completed: <b>${escapeHtml(issue.title)}</b>\nPR: ${escapeHtml(prUrl)}\n\n<i>Reply to this message to continue the conversation.</i>`;
       const completionPlain = `Issue completed: ${issue.title}\nPR: ${prUrl}\n\nReply to this message to continue the conversation.`;
       try {
-        const msgId = await sendTelegramMessageWithId(telegramConfig, completionHtml);
-        await db.insert(issueMessages).values({
-          issueId,
-          direction: "from_claude",
-          message: completionPlain,
-          telegramMessageId: msgId,
-        });
+        if (transportConfig.kind === "telegram") {
+          const msgId = await sendTelegramMessageWithId(transportConfig, completionHtml);
+          await db.insert(issueMessages).values({
+            issueId,
+            direction: "from_claude",
+            message: completionPlain,
+            telegramMessageId: msgId,
+          });
+        } else {
+          const result = await sendIssueTransportMessage(issueId, transportConfig, completionPlain);
+          await db.insert(issueMessages).values({
+            issueId,
+            direction: "from_claude",
+            message: completionPlain,
+            slackMessageTs: result.slackTs,
+          });
+        }
       } catch (err) {
         console.error("[pipeline] Failed to send completion notification:", err);
       }
@@ -1467,6 +1531,6 @@ export async function runIssuePipeline(
 
   } catch (err) {
     await failIssue(issueId, String(err));
-    await notify(telegramConfig, `Pipeline failed for: ${escapeHtml(issue.title)}\nError: ${escapeHtml(String(err).substring(0, 200))}`);
+    await notify(issueId, transportConfig, `Pipeline failed for: ${escapeHtml(issue.title)}\nError: ${escapeHtml(String(err).substring(0, 200))}`);
   }
 }
