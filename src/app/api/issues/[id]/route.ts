@@ -58,6 +58,8 @@ export const GET = withErrorHandler(async (
     description: issue.description,
     status: issue.status,
     currentPhase: issue.currentPhase,
+    // Slack takes precedence if both are somehow set
+    source: issue.slackChannelId ? "slack" : issue.telegramChatId ? "telegram" : "web",
     prUrl: issue.prUrl,
     prStatus,
     prSummary: issue.prSummary,
