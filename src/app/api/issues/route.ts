@@ -48,6 +48,8 @@ export const GET = withErrorHandler(async (request: Request) => {
       prStatus: issues.prStatus,
       error: issues.error,
       worktreePath: issues.worktreePath,
+      slackChannelId: issues.slackChannelId,
+      telegramChatId: issues.telegramChatId,
       createdAt: issues.createdAt,
       updatedAt: issues.updatedAt,
       completedAt: issues.completedAt,
@@ -79,6 +81,8 @@ export const GET = withErrorHandler(async (request: Request) => {
     prStatus: row.prStatus,
     error: row.error,
     hasWorktree: row.worktreePath != null,
+    // Slack takes precedence if both are somehow set (no DB constraint prevents it)
+    source: row.slackChannelId ? "slack" as const : row.telegramChatId ? "telegram" as const : "web" as const,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     completedAt: row.completedAt?.toISOString() || null,
