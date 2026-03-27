@@ -22,6 +22,7 @@ type SlackEvent =
     ts: string;
     thread_ts?: string;
     channel: string;
+    channel_type?: string;
     bot_id?: string;
     subtype?: string;
     files?: Array<{ id?: string; name?: string }>;
@@ -32,6 +33,7 @@ type SlackEvent =
     ts: string;
     thread_ts?: string;
     channel: string;
+    channel_type?: string;
     bot_id?: string;
     subtype?: string;
     files?: Array<{ id?: string; name?: string }>;
