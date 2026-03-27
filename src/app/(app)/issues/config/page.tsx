@@ -31,9 +31,18 @@ interface TelegramConfig {
   chatId: string | null;
 }
 
+interface SlackConfig {
+  configured: boolean;
+  enabled: boolean;
+  botToken: string | null;
+  appToken: string | null;
+  channelId: string | null;
+}
+
 export default function IssuesConfigPage() {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [telegram, setTelegram] = useState<TelegramConfig | null>(null);
+  const [slack, setSlack] = useState<SlackConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -66,11 +75,17 @@ export default function IssuesConfigPage() {
   const [tgChatTitle, setTgChatTitle] = useState("");
   const [tgManualChatId, setTgManualChatId] = useState("");
 
+  const [slackBotToken, setSlackBotToken] = useState("");
+  const [slackAppToken, setSlackAppToken] = useState("");
+  const [slackChannelId, setSlackChannelId] = useState("");
+  const [savingSlack, setSavingSlack] = useState(false);
+
   async function fetchAll() {
     try {
-      const [repoRes, tgRes] = await Promise.all([
+      const [repoRes, tgRes, slackRes] = await Promise.all([
         fetch("/api/issues/projects"),
         fetch("/api/issues/telegram"),
+        fetch("/api/issues/slack"),
       ]);
       if (repoRes.ok) {
         const data = await repoRes.json();
@@ -79,6 +94,10 @@ export default function IssuesConfigPage() {
       if (tgRes.ok) {
         const data = await tgRes.json();
         setTelegram(data);
+      }
+      if (slackRes.ok) {
+        const data = await slackRes.json();
+        setSlack(data);
       }
     } catch {
       setError("Could not connect to server");
@@ -285,6 +304,52 @@ export default function IssuesConfigPage() {
     }
   }
 
+  async function handleSaveSlack() {
+    setSavingSlack(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/issues/slack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botToken: slackBotToken.trim(),
+          appToken: slackAppToken.trim(),
+          channelId: slackChannelId.trim() || undefined,
+          test: true,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showError(data.error || "Failed to save Slack config");
+        return;
+      }
+
+      setSlackBotToken("");
+      setSlackAppToken("");
+      setSlackChannelId("");
+      showSuccess("Slack app configured and tested");
+      await fetchAll();
+    } catch {
+      showError("Failed to save Slack config");
+    } finally {
+      setSavingSlack(false);
+    }
+  }
+
+  async function handleDeleteSlack() {
+    try {
+      const res = await fetch("/api/issues/slack", { method: "DELETE" });
+      if (!res.ok) {
+        showError("Failed to remove Slack config");
+        return;
+      }
+      showSuccess("Slack config removed");
+      await fetchAll();
+    } catch {
+      showError("Failed to remove Slack config");
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -331,6 +396,100 @@ export default function IssuesConfigPage() {
             [OK] {success}
           </div>
         )}
+
+        <section className="space-y-3">
+          <h2 className="text-[14px] font-mono font-bold text-accent uppercase tracking-widest">
+            &gt; Slack Issue App
+          </h2>
+          <p className="text-[13px] font-mono text-muted-foreground ml-4">
+            Uses Slack Socket Mode so issue creation and all follow-up replies stay inside the Slack thread.
+          </p>
+
+          {slack?.configured ? (
+            <div className="term-card p-4 space-y-2">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <div className="text-[12px] font-mono text-muted uppercase">bot token</div>
+                  <div className="text-[14px] font-mono text-foreground">{slack.botToken}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[12px] font-mono text-muted uppercase">app token</div>
+                  <div className="text-[14px] font-mono text-foreground">{slack.appToken}</div>
+                </div>
+                <div className="space-y-1 text-right">
+                  <div className="text-[12px] font-mono text-muted uppercase">channel id</div>
+                  <div className="text-[14px] font-mono text-foreground">{slack.channelId || "any joined channel"}</div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                <span className="flex items-center gap-1.5 text-[12px] font-mono text-green">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green" />
+                  configured
+                </span>
+                <button
+                  onClick={handleDeleteSlack}
+                  className="text-[12px] font-mono text-muted-foreground hover:text-red transition-colors"
+                >
+                  remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="term-card p-4 space-y-3">
+              <div className="space-y-1">
+                <label className="text-[12px] font-mono text-muted uppercase tracking-wider">bot token</label>
+                <input
+                  type="password"
+                  value={slackBotToken}
+                  onChange={(e) => setSlackBotToken(e.target.value)}
+                  placeholder="xoxb-..."
+                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[12px] font-mono text-muted uppercase tracking-wider">app token</label>
+                <input
+                  type="password"
+                  value={slackAppToken}
+                  onChange={(e) => setSlackAppToken(e.target.value)}
+                  placeholder="xapp-..."
+                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                />
+                <p className="text-[12px] font-mono text-muted">
+                  Enable Socket Mode in your Slack app and use an app-level token with the <span className="text-foreground">connections:write</span> scope.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[12px] font-mono text-muted uppercase tracking-wider">channel id (optional)</label>
+                <input
+                  type="text"
+                  value={slackChannelId}
+                  onChange={(e) => setSlackChannelId(e.target.value)}
+                  placeholder="C0123456789"
+                  className="w-full border border-border bg-background px-3 py-2 text-[14px] font-mono text-foreground placeholder:text-muted/50 outline-none focus:border-accent"
+                />
+                <p className="text-[12px] font-mono text-muted">
+                  Restrict issue creation to one Slack channel, or leave blank to accept mentions in any channel the bot has joined.
+                </p>
+              </div>
+              <div className="border border-border/50 bg-background/40 px-3 py-3 text-[12px] font-mono text-muted space-y-1">
+                <div>Required bot scopes: <span className="text-foreground">app_mentions:read</span>, <span className="text-foreground">channels:history</span>, <span className="text-foreground">groups:history</span>, <span className="text-foreground">chat:write</span></div>
+                <div>Usage: mention the bot with <span className="text-foreground">@bot repo-name: description</span>. All replies should stay in that Slack thread.</div>
+              </div>
+              <button
+                onClick={handleSaveSlack}
+                disabled={!slackBotToken.trim() || !slackAppToken.trim() || savingSlack}
+                className="flex items-center gap-1.5 border border-accent bg-accent/10 px-4 py-1.5 text-[13px] font-mono font-bold text-accent uppercase tracking-wider transition-all hover:bg-accent/20 disabled:opacity-40"
+              >
+                {savingSlack ? (
+                  <><Loader2 className="h-3 w-3 animate-spin" /> saving...</>
+                ) : (
+                  <><Send className="h-3 w-3" /> save &amp; test</>
+                )}
+              </button>
+            </div>
+          )}
+        </section>
 
         {/* Telegram Bot Config */}
         <section className="space-y-3">

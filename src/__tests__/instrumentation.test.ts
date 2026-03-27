@@ -12,6 +12,8 @@ describe("instrumentation register()", () => {
     // Reset the globalThis poller state so ensurePollerRunning is callable
     const g = globalThis as unknown as { _issuePoller?: { running: boolean; starting: boolean } };
     g._issuePoller = { running: false, starting: false };
+    const slack = globalThis as unknown as { _slackIssueSocket?: { running: boolean; starting: boolean } };
+    slack._slackIssueSocket = { running: false, starting: false };
   });
 
   afterEach(() => {
@@ -29,16 +31,18 @@ describe("instrumentation register()", () => {
     }
   });
 
-  test("calls ensurePollerRunning in bun runtime", async () => {
+  test("starts issue transports in bun runtime", async () => {
     // We're running under bun, so process.versions.bun is already set
     expect(process.versions.bun).toBeTruthy();
 
     const { register } = await import("../instrumentation");
     await register();
 
-    // ensurePollerRunning sets starting=true on the global state
+    // Both transport managers set starting=true on the global state
     const g = globalThis as unknown as { _issuePoller?: { running: boolean; starting: boolean } };
     expect(g._issuePoller!.starting).toBe(true);
+    const slack = globalThis as unknown as { _slackIssueSocket?: { running: boolean; starting: boolean } };
+    expect(slack._slackIssueSocket!.starting).toBe(true);
   });
 
   test("skips in non-bun runtime", async () => {
@@ -52,8 +56,10 @@ describe("instrumentation register()", () => {
     const { register } = await import("../instrumentation");
     await register();
 
-    // ensurePollerRunning should NOT have been called
+    // Transport managers should NOT have been called
     const g = globalThis as unknown as { _issuePoller?: { running: boolean; starting: boolean } };
     expect(g._issuePoller!.starting).toBe(false);
+    const slack = globalThis as unknown as { _slackIssueSocket?: { running: boolean; starting: boolean } };
+    expect(slack._slackIssueSocket!.starting).toBe(false);
   });
 });

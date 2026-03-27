@@ -6,5 +6,7 @@ export async function register() {
   if (!globalThis.process?.versions?.bun) return;
 
   const { ensurePollerRunning } = await import("@/lib/issues/poller-manager");
+  const { ensureSlackIssuesSocketRunning } = await import("@/lib/issues/slack-socket");
   ensurePollerRunning();
+  ensureSlackIssuesSocketRunning();
 }
