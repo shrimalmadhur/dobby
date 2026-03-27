@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
-import { issues, notificationConfigs } from "@/lib/db/schema";
+import { issues } from "@/lib/db/schema";
 import { eq, and, or, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import { getIssuesTelegramConfig, pollTelegramUpdates, processTelegramUpdate } from "./telegram-poller";
 import { runIssuePipeline } from "./pipeline";
+import { getNotificationConfig, upsertNotificationConfig } from "@/lib/db/notification-config";
 import type { IssuesTelegramConfig, IssuesTransportConfig } from "./types";
 
 // Stale lock threshold: 4 hours (covers worst-case pipeline: 3 plan iterations + impl + reviews + QA waits)
@@ -55,26 +56,13 @@ export function ensurePollerRunning(): void {
 
 // ── Shared poller logic (used by both in-process and standalone script) ──
 
-export async function getOffset(): Promise<number> {
-  const [row] = await db.select().from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, "telegram-issues-offset")).limit(1);
+export function getOffset(): number {
+  const row = getNotificationConfig("telegram-issues-offset");
   return row ? parseInt((row.config as Record<string, string>).offset || "0") : 0;
 }
 
-export async function setOffset(offset: number) {
-  const [existing] = await db.select().from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, "telegram-issues-offset")).limit(1);
-  if (existing) {
-    await db.update(notificationConfigs)
-      .set({ config: { offset: String(offset) }, updatedAt: new Date() })
-      .where(eq(notificationConfigs.id, existing.id));
-  } else {
-    await db.insert(notificationConfigs).values({
-      channel: "telegram-issues-offset",
-      enabled: true,
-      config: { offset: String(offset) },
-    });
-  }
+export function setOffset(offset: number) {
+  upsertNotificationConfig("telegram-issues-offset", { offset: String(offset) });
 }
 
 /** Clear locks that are older than STALE_LOCK_MS (e.g. from crashed processes). */

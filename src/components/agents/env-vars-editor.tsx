@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Trash2, Eye, EyeOff } from "lucide-react";
-
-const inputClasses =
-  "w-full border border-border bg-background px-3 py-2 text-[15px] font-mono text-foreground placeholder:text-muted/40 outline-none transition-all focus:border-accent input-focus";
+import { inputClasses } from "@/components/shared/form-classes";
 
 type EnvVarEntry = { key: string; value: string };
 

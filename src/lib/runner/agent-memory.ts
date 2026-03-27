@@ -6,14 +6,7 @@ import { resolveClaudePath } from "@/lib/utils/resolve-claude-path";
 const MEMORY_FILE = "memory.md";
 const ARCHIVE_FILE = "memory-archive.md";
 
-/**
- * Env var keys that must not be overridden by agent config.
- * Shared between main agent and memory sub-agent.
- */
-export const DENIED_ENV_KEYS = new Set([
-  "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "NODE_OPTIONS",
-  "HOME", "SHELL", "USER", "LOGNAME", "DYLD_INSERT_LIBRARIES",
-]);
+import { DENIED_ENV_KEYS } from "@/lib/validations/constants";
 
 /** Build a child process env by merging agent envVars (with deny-list) into process.env. */
 export function buildChildEnv(envVars?: Record<string, string>): NodeJS.ProcessEnv {

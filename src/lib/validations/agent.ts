@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DENIED_ENV_KEYS } from "@/lib/runner/agent-memory";
+import { DENIED_ENV_KEYS } from "@/lib/validations/constants";
 
 // Only allow safe cron characters: digits, letters (MON-FRI, JAN-DEC), *, /, -, comma, #, L, W, ?
 // Uses ` +` (spaces only) instead of `\s+` to prevent embedded newlines/tabs from corrupting crontab

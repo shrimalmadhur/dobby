@@ -1,20 +1,33 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db, mcpServers } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { withErrorHandler } from "@/lib/api/utils";
+import { withErrorHandler, badRequest } from "@/lib/api/utils";
 
 export const runtime = "nodejs";
+
+const mcpServerUpdateSchema = z.object({
+  name: z.string().optional(),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  enabled: z.boolean().optional(),
+}).strict();
 
 export const PATCH = withErrorHandler(async (
   request: Request,
   { params }: { params: Promise<Record<string, string>> }
 ) => {
   const { id } = await params;
-  const body = await request.json();
+  const raw = await request.json();
+  const parsed = mcpServerUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return badRequest(parsed.error.issues.map(i => i.message).join(", "));
+  }
 
   const [updated] = await db
     .update(mcpServers)
-    .set(body)
+    .set(parsed.data)
     .where(eq(mcpServers.id, id))
     .returning();
 

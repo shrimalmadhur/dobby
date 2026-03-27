@@ -6,6 +6,7 @@ import { cronToHuman } from "@/lib/utils/cron";
 import { ClaudePanel } from "./claude-panel";
 import { EnvVarsEditor } from "./env-vars-editor";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import { inputClasses, labelClasses } from "@/components/shared/form-classes";
 
 export interface AgentFormData {
   name: string;
@@ -22,11 +23,6 @@ interface AgentFormProps {
   onSubmit: (data: AgentFormData) => Promise<void>;
   submitLabel: string;
 }
-
-const inputClasses =
-  "w-full border border-border bg-background px-3 py-2 text-[15px] font-mono text-foreground placeholder:text-muted/40 outline-none transition-all focus:border-accent input-focus";
-
-const labelClasses = "block text-[12px] font-mono text-muted uppercase tracking-widest mb-1";
 
 export function AgentForm({ initialValues, onSubmit, submitLabel }: AgentFormProps) {
   const [form, setForm] = useState<AgentFormData>({

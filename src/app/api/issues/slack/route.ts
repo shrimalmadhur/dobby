@@ -1,7 +1,4 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { notificationConfigs } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import {
   isValidSlackAppToken,
   isValidSlackBotToken,
@@ -9,6 +6,7 @@ import {
   testSlackConnection,
 } from "@/lib/notifications/slack";
 import { ensureSlackIssuesSocketRunning, stopSlackIssuesSocket } from "@/lib/issues/slack-socket";
+import { upsertNotificationConfig, getNotificationConfig, deleteNotificationConfig } from "@/lib/db/notification-config";
 import { withErrorHandler } from "@/lib/api/utils";
 
 export const runtime = "nodejs";
@@ -16,11 +14,7 @@ export const runtime = "nodejs";
 const CHANNEL = "slack-issues";
 
 export const GET = withErrorHandler(async () => {
-  const [config] = await db
-    .select()
-    .from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, CHANNEL))
-    .limit(1);
+  const config = getNotificationConfig(CHANNEL);
 
   if (!config) {
     return NextResponse.json({ configured: false });
@@ -59,29 +53,13 @@ export const POST = withErrorHandler(async (request: Request) => {
     await testSlackConnection(botToken, appToken, channelId || undefined);
   }
 
-  const [existing] = await db
-    .select()
-    .from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, CHANNEL))
-    .limit(1);
-
-  const config = {
+  const config: Record<string, string> = {
     bot_token: botToken,
     app_token: appToken,
     ...(channelId ? { channel_id: channelId } : {}),
   };
 
-  if (existing) {
-    await db.update(notificationConfigs)
-      .set({ enabled: true, config, updatedAt: new Date() })
-      .where(eq(notificationConfigs.id, existing.id));
-  } else {
-    await db.insert(notificationConfigs).values({
-      channel: CHANNEL,
-      enabled: true,
-      config,
-    });
-  }
+  upsertNotificationConfig(CHANNEL, config);
 
   ensureSlackIssuesSocketRunning();
 
@@ -89,7 +67,7 @@ export const POST = withErrorHandler(async (request: Request) => {
 });
 
 export const DELETE = withErrorHandler(async () => {
-  await db.delete(notificationConfigs).where(eq(notificationConfigs.channel, CHANNEL));
+  deleteNotificationConfig(CHANNEL);
   stopSlackIssuesSocket();
   return NextResponse.json({ success: true });
 });
