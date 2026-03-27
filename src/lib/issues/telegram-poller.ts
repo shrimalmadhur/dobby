@@ -225,31 +225,34 @@ async function handleCompletedIssueReply(
     return;
   }
 
-  // Re-fetch issue to get current worktreePath (may have been cleaned up)
-  const [issue] = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1);
-  if (!issue || issue.status !== "completed") return;
-
-  // Find the session to resume: prefer implementation (phase 4),
-  // fall back to planning session, then highest-numbered phase
-  const sessionIds = (issue.phaseSessionIds as Record<string, string>) || {};
-  const sessionId = sessionIds["7"] || sessionIds["6"] || sessionIds["4"]
-    || issue.planningSessionId || sessionIds["3"] || sessionIds["2"] || sessionIds["1"];
-
-  if (!sessionId || !issue.worktreePath) {
-    console.log(`[poller] No session/worktree for completed issue ${issueId.substring(0, 8)}, skipping conversation`);
-    try {
-      await sendTelegramReply(config,
-        `<i>This issue's workspace has been cleaned up. The conversation can no longer be continued.</i>`,
-        userMessageId
-      );
-    } catch { /* best effort */ }
-    return;
-  }
-
+  // Acquire guard immediately — before any early returns — so cleanup in
+  // finally is guaranteed and the guard never leaks.
   activeIssueResumes.add(issueId);
-  console.log(`[poller] Resuming session for completed issue ${issueId.substring(0, 8)}: "${userText.substring(0, 80)}${userText.length > 80 ? "..." : ""}"`);
 
   try {
+    // Re-fetch issue to get current worktreePath (may have been cleaned up)
+    const [issue] = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1);
+    if (!issue || issue.status !== "completed") return;
+
+    // Find the session to resume: prefer latest phase (PR creation → fix → implementation),
+    // fall back to planning session, then earlier phases
+    const sessionIds = (issue.phaseSessionIds as Record<string, string>) || {};
+    const sessionId = sessionIds["7"] || sessionIds["6"] || sessionIds["4"]
+      || issue.planningSessionId || sessionIds["3"] || sessionIds["2"] || sessionIds["1"];
+
+    if (!sessionId || !issue.worktreePath) {
+      console.log(`[poller] No session/worktree for completed issue ${issueId.substring(0, 8)}, skipping conversation`);
+      try {
+        await sendTelegramReply(config,
+          `<i>This issue's workspace has been cleaned up. The conversation can no longer be continued.</i>`,
+          userMessageId
+        );
+      } catch { /* best effort */ }
+      return;
+    }
+
+    console.log(`[poller] Resuming session for completed issue ${issueId.substring(0, 8)}: "${userText.substring(0, 80)}${userText.length > 80 ? "..." : ""}"`);
+
     const response = await resumeSession(sessionId, issue.worktreePath, userText);
 
     // Guard against empty responses (e.g., tool-only runs with no text output)
