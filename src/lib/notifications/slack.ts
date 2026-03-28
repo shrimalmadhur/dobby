@@ -1,6 +1,6 @@
 import nodeFetch from "node-fetch";
 
-export const SLACK_MAX_MSG_LEN = 40_000;
+const SLACK_MAX_MSG_LEN = 40_000;
 export const SLACK_SAFE_MSG_LEN = 35_000;
 
 export interface SlackConfig {
@@ -24,7 +24,7 @@ export function isValidSlackAppToken(token: string): boolean {
   return /^xapp-[A-Za-z0-9-]+$/.test(token);
 }
 
-export function escapeSlackText(text: string): string {
+function escapeSlackText(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

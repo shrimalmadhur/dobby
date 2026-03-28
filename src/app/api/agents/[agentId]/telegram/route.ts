@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { notificationConfigs } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { maskToken } from "@/lib/notifications/telegram";
+import { upsertNotificationConfig, getNotificationConfig, deleteNotificationConfig } from "@/lib/db/notification-config";
 import { withErrorHandler } from "@/lib/api/utils";
 
 export const runtime = "nodejs";
@@ -14,13 +12,7 @@ function channelKey(agentId: string) {
 export const GET = withErrorHandler(async (_request, { params }) => {
   const { agentId } = await params;
 
-  const rows = await db
-    .select()
-    .from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, channelKey(agentId)))
-    .limit(1);
-
-  const config = rows[0];
+  const config = getNotificationConfig(channelKey(agentId));
   if (!config) {
     return NextResponse.json({
       configured: false,
@@ -54,50 +46,17 @@ export const POST = withErrorHandler(async (request, { params }) => {
     );
   }
 
-  const channel = channelKey(agentId);
-  const configData = {
-    bot_token: botToken,
-    chat_id: chatId,
-    bot_name: botName || "",
-  };
+  const id = upsertNotificationConfig(
+    channelKey(agentId),
+    { bot_token: botToken, chat_id: chatId, bot_name: botName || "" },
+    enabled ?? true
+  );
 
-  const rows = await db
-    .select()
-    .from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, channel))
-    .limit(1);
-
-  const existing = rows[0];
-
-  if (existing) {
-    const [updated] = await db
-      .update(notificationConfigs)
-      .set({
-        enabled: enabled ?? true,
-        config: configData,
-        updatedAt: new Date(),
-      })
-      .where(eq(notificationConfigs.id, existing.id))
-      .returning();
-    return NextResponse.json({ success: true, id: updated.id });
-  } else {
-    const [created] = await db
-      .insert(notificationConfigs)
-      .values({
-        channel,
-        enabled: enabled ?? true,
-        config: configData,
-      })
-      .returning();
-    return NextResponse.json({ success: true, id: created.id });
-  }
+  return NextResponse.json({ success: true, id });
 });
 
 export const DELETE = withErrorHandler(async (_request, { params }) => {
   const { agentId } = await params;
-
-  await db
-    .delete(notificationConfigs)
-    .where(eq(notificationConfigs.channel, channelKey(agentId)));
+  deleteNotificationConfig(channelKey(agentId));
   return NextResponse.json({ success: true });
 });

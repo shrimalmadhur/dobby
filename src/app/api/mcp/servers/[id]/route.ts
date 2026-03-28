@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db, mcpServers } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { withErrorHandler } from "@/lib/api/utils";
+import { withErrorHandler, parseBody } from "@/lib/api/utils";
+import { mcpServerUpdateSchema } from "@/lib/validations/mcp";
 
 export const runtime = "nodejs";
 
@@ -10,11 +11,13 @@ export const PATCH = withErrorHandler(async (
   { params }: { params: Promise<Record<string, string>> }
 ) => {
   const { id } = await params;
-  const body = await request.json();
+  const raw = await request.json();
+  const { data: parsed, error } = parseBody(raw, mcpServerUpdateSchema);
+  if (error) return error;
 
   const [updated] = await db
     .update(mcpServers)
-    .set(body)
+    .set(parsed)
     .where(eq(mcpServers.id, id))
     .returning();
 

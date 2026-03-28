@@ -1,4 +1,4 @@
-export interface AgentConfig {
+interface AgentConfig {
   name: string;
   enabled: boolean;
   schedule: string; // cron expression

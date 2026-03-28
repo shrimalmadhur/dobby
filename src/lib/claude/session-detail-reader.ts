@@ -14,7 +14,7 @@ import {
   decodeProjectDir,
   parseJsonlEntries,
 } from "./utils";
-import { getSessionStatus, aggregateTokensFromEntries, extractMessageUsage } from "./session-utils";
+import { getSessionStatus, aggregateTokensFromEntries, extractMessageUsage, extractSessionMetadata, summarizeToolInput } from "./session-utils";
 
 function getContentBlocks(entry: ClaudeSessionEntry) {
   const c = entry.message?.content;
@@ -22,20 +22,16 @@ function getContentBlocks(entry: ClaudeSessionEntry) {
   return c;
 }
 
-function summarizeToolInput(name: string, input?: Record<string, unknown>): string {
-  if (!input) return name;
-  if ("command" in input) return `${name}: ${String(input.command).slice(0, 120)}`;
-  if ("file_path" in input) return `${name}: ${String(input.file_path)}`;
-  if ("query" in input) return `${name}: ${String(input.query).slice(0, 120)}`;
-  if ("pattern" in input) return `${name}: ${String(input.pattern).slice(0, 80)}`;
-  if ("prompt" in input) return `${name}: ${String(input.prompt).slice(0, 120)}`;
-  if ("description" in input) return `${name}: ${String(input.description).slice(0, 120)}`;
-  if ("url" in input) return `${name}: ${String(input.url).slice(0, 100)}`;
-  if ("old_string" in input) return `${name}: replacing in ${input.file_path ?? "file"}`;
-  return name;
+interface BuildTimelineOptions {
+  /** Include internal user messages (for sub-agent timelines). Default: false */
+  includeInternalMessages?: boolean;
 }
 
-function buildTimeline(entries: ClaudeSessionEntry[]): TimelineEntry[] {
+export function buildTimeline(
+  entries: ClaudeSessionEntry[],
+  options: BuildTimelineOptions = {}
+): TimelineEntry[] {
+  const { includeInternalMessages = false } = options;
   const timeline: TimelineEntry[] = [];
   const seenSubAgents = new Set<string>();
 
@@ -43,8 +39,8 @@ function buildTimeline(entries: ClaudeSessionEntry[]): TimelineEntry[] {
     const ts = entry.timestamp;
     if (!ts) continue;
 
-    // Sub-agent launch (deduplicate: only show first occurrence per agent)
-    if (entry.type === "progress" && entry.data?.type === "agent_progress" && entry.data.agentId) {
+    // Sub-agent launch tracking (only in parent timelines)
+    if (!includeInternalMessages && entry.type === "progress" && entry.data?.type === "agent_progress" && entry.data.agentId) {
       if (!seenSubAgents.has(entry.data.agentId)) {
         seenSubAgents.add(entry.data.agentId);
         timeline.push({
@@ -61,8 +57,8 @@ function buildTimeline(entries: ClaudeSessionEntry[]): TimelineEntry[] {
     if (entry.type !== "user" && entry.type !== "assistant") continue;
     if (!entry.message) continue;
 
-    // Skip sidechain entries (sub-agent work) in the parent timeline
-    if (entry.isSidechain) continue;
+    // Skip sidechain entries in parent timelines (sub-agent timelines include everything)
+    if (!includeInternalMessages && entry.isSidechain) continue;
 
     const blocks = getContentBlocks(entry);
     const stringContent = typeof entry.message.content === "string" ? entry.message.content : null;
@@ -70,12 +66,16 @@ function buildTimeline(entries: ClaudeSessionEntry[]): TimelineEntry[] {
     const usage = extractMessageUsage(entry);
 
     // User message with text content
-    if (entry.type === "user" && entry.userType === "external") {
+    const isUserText = includeInternalMessages
+      ? (entry.userType === "external" || entry.userType === "internal")
+      : entry.userType === "external";
+
+    if (entry.type === "user" && isUserText) {
       const text = stringContent || blocks.find((b) => b.type === "text")?.text;
       if (text) {
         timeline.push({ timestamp: ts, kind: "user", text: text.slice(0, 500) });
+        continue;
       }
-      continue;
     }
 
     // Tool results (user messages that contain tool_result blocks)
@@ -256,19 +256,7 @@ export async function readSessionDetail(
   const entries = parseJsonlEntries<ClaudeSessionEntry>(content);
   if (entries.length === 0) return null;
 
-  // Extract metadata
-  let slug: string | null = null;
-  let model: string | null = null;
-  let gitBranch: string | null = null;
-  let cwd: string | null = null;
-
-  for (const e of entries) {
-    if (!slug && e.slug) slug = e.slug;
-    if (!model && e.message?.model) model = e.message.model;
-    if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
-    if (!cwd && e.cwd) cwd = e.cwd;
-    if (slug && model && gitBranch && cwd) break;
-  }
+  const { slug, model, gitBranch, cwd } = extractSessionMetadata(entries);
 
   const totalTokens = aggregateTokensFromEntries(entries);
   const firstEntry = entries[0];
@@ -328,18 +316,7 @@ export async function readSubAgentDetail(
   const entries = parseJsonlEntries<ClaudeSessionEntry>(content);
   if (entries.length === 0) return null;
 
-  let slug: string | null = null;
-  let model: string | null = null;
-  let gitBranch: string | null = null;
-  let cwd: string | null = null;
-
-  for (const e of entries) {
-    if (!slug && e.slug) slug = e.slug;
-    if (!model && e.message?.model) model = e.message.model;
-    if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
-    if (!cwd && e.cwd) cwd = e.cwd;
-    if (slug && model && gitBranch && cwd) break;
-  }
+  const { slug, model, gitBranch, cwd } = extractSessionMetadata(entries);
 
   const totalTokens = aggregateTokensFromEntries(entries);
   const firstEntry = entries[0];
@@ -347,7 +324,7 @@ export async function readSubAgentDetail(
   const projectPath = cwd || decodeProjectDir(projectDir);
   const status = getSessionStatus(fileStat.mtimeMs, null)!;
   const fallbackTime = new Date(fileStat.mtimeMs).toISOString();
-  const timeline = buildSubAgentTimeline(entries);
+  const timeline = buildTimeline(entries, { includeInternalMessages: true });
 
   return {
     session: {
@@ -368,80 +345,3 @@ export async function readSubAgentDetail(
   };
 }
 
-// Sub-agent timeline doesn't skip sidechains (everything is its own work)
-function buildSubAgentTimeline(entries: ClaudeSessionEntry[]): TimelineEntry[] {
-  const timeline: TimelineEntry[] = [];
-
-  for (const entry of entries) {
-    const ts = entry.timestamp;
-    if (!ts) continue;
-
-    if (entry.type !== "user" && entry.type !== "assistant") continue;
-    if (!entry.message) continue;
-
-    const blocks = getContentBlocks(entry);
-    const stringContent = typeof entry.message.content === "string" ? entry.message.content : null;
-
-    const usage = extractMessageUsage(entry);
-
-    // User text message (first message is the prompt)
-    if (entry.type === "user" && (entry.userType === "external" || entry.userType === "internal")) {
-      const text = stringContent || blocks.find((b) => b.type === "text")?.text;
-      if (text) {
-        timeline.push({ timestamp: ts, kind: "user", text: text.slice(0, 500) });
-        continue;
-      }
-    }
-
-    // Tool results
-    if (entry.type === "user") {
-      for (const block of blocks) {
-        if (block.type === "tool_result") {
-          const resultText = typeof block.content === "string" ? block.content : "";
-          timeline.push({
-            timestamp: ts,
-            kind: "tool_result",
-            text: resultText.slice(0, 300),
-            isError: block.is_error ?? false,
-          });
-        }
-      }
-      continue;
-    }
-
-    // Assistant messages
-    if (entry.type === "assistant") {
-      for (const block of blocks) {
-        if (block.type === "tool_use" && block.name) {
-          timeline.push({
-            timestamp: ts,
-            kind: "tool_use",
-            text: summarizeToolInput(block.name, block.input),
-            toolName: block.name,
-            tokenUsage: usage,
-          });
-        } else if (block.type === "text" && block.text) {
-          const trimmed = block.text.trim();
-          if (trimmed.length > 0) {
-            timeline.push({
-              timestamp: ts,
-              kind: "assistant",
-              text: trimmed.slice(0, 500),
-              tokenUsage: usage,
-            });
-          }
-        }
-      }
-      if (blocks.length === 0 && stringContent) {
-        timeline.push({
-          timestamp: ts,
-          kind: "assistant",
-          text: stringContent.slice(0, 500),
-          tokenUsage: usage,
-        });
-      }
-    }
-  }
-
-  return timeline;
-}

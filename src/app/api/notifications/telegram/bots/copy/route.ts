@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { notificationConfigs, agents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { maskToken } from "@/lib/notifications/telegram";
+import { upsertNotificationConfig } from "@/lib/db/notification-config";
 import { withErrorHandler } from "@/lib/api/utils";
 
 export const runtime = "nodejs";
@@ -55,36 +56,10 @@ export const POST = withErrorHandler(async (request: Request) => {
     );
   }
 
-  const channel = `telegram-agent:${targetAgentId}`;
-  const configData = {
-    bot_token: srcCfg.bot_token,
-    chat_id: srcCfg.chat_id,
-    bot_name: srcCfg.bot_name || "",
-  };
-
-  // Upsert — check existing first (same pattern as existing telegram/route.ts)
-  const [existing] = await db
-    .select()
-    .from(notificationConfigs)
-    .where(eq(notificationConfigs.channel, channel))
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(notificationConfigs)
-      .set({
-        enabled: true,
-        config: configData,
-        updatedAt: new Date(),
-      })
-      .where(eq(notificationConfigs.id, existing.id));
-  } else {
-    await db.insert(notificationConfigs).values({
-      channel,
-      enabled: true,
-      config: configData,
-    });
-  }
+  upsertNotificationConfig(
+    `telegram-agent:${targetAgentId}`,
+    { bot_token: srcCfg.bot_token, chat_id: srcCfg.chat_id, bot_name: srcCfg.bot_name || "" }
+  );
 
   // Return masked config (same shape as GET /api/agents/{agentId}/telegram)
   return NextResponse.json({
